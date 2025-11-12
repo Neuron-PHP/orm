@@ -1,0 +1,15 @@
+composer.phar
+composer.lock
+composer-test.lock
+vendor/
+node_modules
+.idea
+.DS_STORE
+public_html/
+build/
+.phpunit.result.cache
+/examples/test.log
+/examples/bad/test.log
+CLAUDE.md
+/cache/
+/.claude/
