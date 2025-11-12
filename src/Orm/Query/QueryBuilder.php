@@ -272,8 +272,13 @@ class QueryBuilder
 			$sql .= " LIMIT {$this->_limit}";
 		}
 
+		// SQLite requires LIMIT when using OFFSET
 		if( $this->_offset !== null )
 		{
+			if( $this->_limit === null )
+			{
+				$sql .= " LIMIT -1";
+			}
 			$sql .= " OFFSET {$this->_offset}";
 		}
 
