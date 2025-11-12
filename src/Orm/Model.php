@@ -111,17 +111,28 @@ abstract class Model
 	 */
 	public function getAttribute( string $key ): mixed
 	{
+		// Try with underscore prefix (snake_case)
 		$property = "_{$key}";
-
 		if( property_exists( $this, $property ) )
 		{
-			return $this->$property;
+			$reflection = new ReflectionProperty( $this, $property );
+			return $reflection->getValue( $this );
+		}
+
+		// Try camelCase conversion (_author_id -> _authorId)
+		$camelCaseKey = str_replace( '_', '', lcfirst( ucwords( $key, '_' ) ) );
+		$property = "_{$camelCaseKey}";
+		if( property_exists( $this, $property ) )
+		{
+			$reflection = new ReflectionProperty( $this, $property );
+			return $reflection->getValue( $this );
 		}
 
 		// Try without underscore
 		if( property_exists( $this, $key ) )
 		{
-			return $this->$key;
+			$reflection = new ReflectionProperty( $this, $key );
+			return $reflection->getValue( $this );
 		}
 
 		return null;
@@ -140,14 +151,17 @@ abstract class Model
 
 		if( property_exists( $this, $property ) )
 		{
-			$this->$property = $value;
+			// Use reflection to set private properties
+			$reflection = new ReflectionProperty( $this, $property );
+			$reflection->setValue( $this, $value );
 			return;
 		}
 
 		// Try without underscore
 		if( property_exists( $this, $key ) )
 		{
-			$this->$key = $value;
+			$reflection = new ReflectionProperty( $this, $key );
+			$reflection->setValue( $this, $value );
 		}
 	}
 
@@ -446,6 +460,40 @@ abstract class Model
 	public static function with( array|string $relations ): QueryBuilder
 	{
 		return static::query()->with( $relations );
+	}
+
+	/**
+	 * Set result limit.
+	 *
+	 * @param int $limit
+	 * @return QueryBuilder
+	 */
+	public static function limit( int $limit ): QueryBuilder
+	{
+		return static::query()->limit( $limit );
+	}
+
+	/**
+	 * Set result offset.
+	 *
+	 * @param int $offset
+	 * @return QueryBuilder
+	 */
+	public static function offset( int $offset ): QueryBuilder
+	{
+		return static::query()->offset( $offset );
+	}
+
+	/**
+	 * Add an order by clause.
+	 *
+	 * @param string $column
+	 * @param string $direction
+	 * @return QueryBuilder
+	 */
+	public static function orderBy( string $column, string $direction = 'ASC' ): QueryBuilder
+	{
+		return static::query()->orderBy( $column, $direction );
 	}
 
 	/**
