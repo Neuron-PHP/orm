@@ -135,4 +135,73 @@ class HasManyRelation extends Relation
 			);
 		}
 	}
+
+	/**
+	 * Handle dependent cascade when parent is destroyed.
+	 *
+	 * @param \Neuron\Orm\DependentStrategy $strategy
+	 * @return void
+	 * @throws \Neuron\Orm\Exceptions\RelationException
+	 */
+	public function handleDependent( \Neuron\Orm\DependentStrategy $strategy ): void
+	{
+		$localKeyValue = $this->_parent->getAttribute( $this->_localKey );
+
+		if( !$localKeyValue )
+		{
+			return;
+		}
+
+		$relatedModel = $this->_relatedModel;
+		$tableName = $relatedModel::getTableName();
+
+		switch( $strategy )
+		{
+			case \Neuron\Orm\DependentStrategy::Destroy:
+				// Load all related records and call destroy() on each
+				$related = $this->load();
+				foreach( $related as $record )
+				{
+					$record->destroy();
+				}
+				break;
+
+			case \Neuron\Orm\DependentStrategy::DeleteAll:
+				// Execute a single DELETE query
+				$stmt = $this->_pdo->prepare(
+					"DELETE FROM {$tableName} WHERE {$this->_foreignKey} = ?"
+				);
+				$stmt->execute( [ $localKeyValue ] );
+				break;
+
+			case \Neuron\Orm\DependentStrategy::Nullify:
+				// Set foreign key to NULL
+				$stmt = $this->_pdo->prepare(
+					"UPDATE {$tableName} SET {$this->_foreignKey} = NULL WHERE {$this->_foreignKey} = ?"
+				);
+				$stmt->execute( [ $localKeyValue ] );
+				break;
+
+			case \Neuron\Orm\DependentStrategy::Restrict:
+				// Check if any related records exist
+				$stmt = $this->_pdo->prepare(
+					"SELECT COUNT(*) as count FROM {$tableName} WHERE {$this->_foreignKey} = ?"
+				);
+				$stmt->execute( [ $localKeyValue ] );
+				$result = $stmt->fetch( PDO::FETCH_ASSOC );
+
+				if( $result['count'] > 0 )
+				{
+					throw new \Neuron\Orm\Exceptions\RelationException(
+						sprintf(
+							'Cannot delete %s because it has %d associated %s records',
+							get_class( $this->_parent ),
+							$result['count'],
+							$relatedModel
+						)
+					);
+				}
+				break;
+		}
+	}
 }

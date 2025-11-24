@@ -132,4 +132,19 @@ class BelongsToRelation extends Relation
 			}
 		}
 	}
+
+	/**
+	 * Handle dependent cascade when parent is destroyed.
+	 *
+	 * Note: BelongsTo relationships typically don't use dependent strategies
+	 * since the child model doesn't "own" the parent model.
+	 *
+	 * @param \Neuron\Orm\DependentStrategy $strategy
+	 * @return void
+	 */
+	public function handleDependent( \Neuron\Orm\DependentStrategy $strategy ): void
+	{
+		// BelongsTo relations don't typically cascade on delete
+		// The parent model is owned by another model, not this one
+	}
 }

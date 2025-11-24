@@ -243,6 +243,26 @@ class QueryBuilder
 	}
 
 	/**
+	 * Delete records matching the query.
+	 *
+	 * @return int Number of rows deleted
+	 */
+	public function delete(): int
+	{
+		$sql = "DELETE FROM {$this->_table}";
+
+		if( !empty( $this->_wheres ) )
+		{
+			$sql .= ' WHERE ' . $this->buildWhereClause();
+		}
+
+		$stmt = $this->_pdo->prepare( $sql );
+		$stmt->execute( $this->_bindings );
+
+		return $stmt->rowCount();
+	}
+
+	/**
 	 * Build the SQL query.
 	 *
 	 * @return string

@@ -79,5 +79,43 @@ function createTestDatabase(): PDO
 		)
 	" );
 
+	$pdo->exec( "
+		CREATE TABLE authors (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL
+		)
+	" );
+
+	$pdo->exec( "
+		CREATE TABLE books (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			title TEXT NOT NULL,
+			author_id INTEGER NOT NULL
+		)
+	" );
+
+	$pdo->exec( "
+		CREATE TABLE genres (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL
+		)
+	" );
+
+	$pdo->exec( "
+		CREATE TABLE book_genres (
+			book_id INTEGER NOT NULL,
+			genre_id INTEGER NOT NULL,
+			PRIMARY KEY (book_id, genre_id)
+		)
+	" );
+
+	$pdo->exec( "
+		CREATE TABLE author_profiles (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			author_id INTEGER NOT NULL UNIQUE,
+			bio TEXT
+		)
+	" );
+
 	return $pdo;
 }

@@ -20,10 +20,12 @@ class HasOne
 	 * @param string $relatedModel The fully qualified class name of the related model
 	 * @param string|null $foreignKey The foreign key column name on related table
 	 * @param string|null $localKey The local key column name (default: id)
+	 * @param DependentStrategy|null $dependent Cascade behavior when parent is destroyed
 	 */
 	public function __construct(
 		public readonly string $relatedModel,
 		public readonly ?string $foreignKey = null,
-		public readonly ?string $localKey = 'id'
+		public readonly ?string $localKey = 'id',
+		public readonly ?\Neuron\Orm\DependentStrategy $dependent = null
 	) {}
 }

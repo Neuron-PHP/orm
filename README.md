@@ -4,13 +4,15 @@ Lightweight ORM component with attribute-based relation management for Neuron-PH
 
 ## Features
 
-- **Attribute-Based Relations**: Define relations using clean PHP 8 attributes
+- **Attribute-Based Relations**: Define relations using PHP 8 attributes
 - **Rails-Like API**: Familiar interface for developers coming from Rails/Laravel
+- **Complete CRUD**: Create, read, update, and delete with simple methods
+- **Dependent Cascade**: Rails-style dependent destroy strategies for relations
 - **Lazy & Eager Loading**: Optimize database queries automatically
 - **Multiple Relation Types**: BelongsTo, HasMany, HasOne, BelongsToMany
 - **Fluent Query Builder**: Chainable query methods
 - **Framework Independent**: Works with existing PDO connections
-- **Lightweight**: Focused on relations, not full ORM features
+- **Lightweight**: Focused on essential ORM features
 
 ## Installation
 
@@ -221,6 +223,162 @@ foreach ($posts as $post) {
 
 // Multiple relations
 $posts = Post::with(['author', 'categories', 'tags'])->all();
+```
+
+## Creating Records
+
+Create and save new records to the database:
+
+```php
+// Using create() - creates and saves in one step
+$user = User::create([
+    'username' => 'john',
+    'email' => 'john@example.com'
+]);
+
+// Using save() on a new instance
+$user = new User();
+$user->setUsername('jane');
+$user->setEmail('jane@example.com');
+$user->save();
+
+// Using fromArray() and save()
+$user = User::fromArray([
+    'username' => 'bob',
+    'email' => 'bob@example.com'
+]);
+$user->save();
+```
+
+## Updating Records
+
+Update existing records:
+
+```php
+// Using update() method
+$user = User::find(1);
+$user->update([
+    'email' => 'newemail@example.com'
+]);
+
+// Using setters and save()
+$user = User::find(1);
+$user->setEmail('anotheremail@example.com');
+$user->save();
+
+// Using fill() for mass assignment
+$user = User::find(1);
+$user->fill([
+    'username' => 'updated',
+    'email' => 'updated@example.com'
+])->save();
+```
+
+## Deleting Records
+
+Delete records from the database:
+
+```php
+// Simple delete (no cascade)
+$user = User::find(1);
+$user->delete();
+
+// Destroy with dependent cascade
+$user = User::find(1);
+$user->destroy(); // Cascades to related records based on dependent strategy
+
+// Destroy multiple by IDs
+User::destroyMany([1, 2, 3]); // Returns count of deleted records
+User::destroyMany(1); // Can also pass single ID
+
+// Delete via query builder
+Post::where('status', 'draft')->delete(); // Returns count of deleted records
+```
+
+## Dependent Cascade Strategies
+
+Define what happens to related records when a parent is destroyed:
+
+### Available Strategies
+
+```php
+use Neuron\Orm\DependentStrategy;
+
+DependentStrategy::Destroy     // Call destroy() on each related record (cascades further)
+DependentStrategy::DeleteAll   // Delete with SQL (faster, no cascade)
+DependentStrategy::Nullify     // Set foreign key to NULL
+DependentStrategy::Restrict    // Prevent deletion if relations exist
+```
+
+### Using Dependent Strategies
+
+```php
+use Neuron\Orm\Attributes\{Table, HasMany, HasOne, BelongsToMany};
+use Neuron\Orm\DependentStrategy;
+
+#[Table('users')]
+class User extends Model
+{
+    // Destroy: Calls destroy() on each post (cascades to post's relations)
+    #[HasMany(Post::class, foreignKey: 'author_id', dependent: DependentStrategy::Destroy)]
+    private array $_posts = [];
+
+    // DeleteAll: Fast SQL delete of profile (no cascade)
+    #[HasOne(Profile::class, foreignKey: 'user_id', dependent: DependentStrategy::DeleteAll)]
+    private ?Profile $_profile = null;
+
+    // Restrict: Prevents user deletion if comments exist
+    #[HasMany(Comment::class, dependent: DependentStrategy::Restrict)]
+    private array $_comments = [];
+}
+
+#[Table('posts')]
+class Post extends Model
+{
+    // DeleteAll: Remove pivot table entries only (genres remain)
+    #[BelongsToMany(Category::class, pivotTable: 'post_categories', dependent: DependentStrategy::DeleteAll)]
+    private array $_categories = [];
+
+    // Nullify: Set comment.post_id = NULL instead of deleting
+    #[HasMany(Comment::class, dependent: DependentStrategy::Nullify)]
+    private array $_comments = [];
+}
+```
+
+### Example Usage
+
+```php
+// With Destroy strategy
+$user = User::find(1);
+$user->destroy(); // Deletes user, all posts, AND all post categories (nested cascade)
+
+// With DeleteAll strategy
+$post = Post::find(1);
+$post->destroy(); // Deletes post AND pivot entries, but NOT the categories themselves
+
+// With Nullify strategy
+$post = Post::find(1);
+$post->destroy(); // Deletes post, sets comment.post_id = NULL for all comments
+
+// With Restrict strategy
+try {
+    $user = User::find(1);
+    $user->destroy(); // Throws RelationException if user has comments
+} catch (RelationException $e) {
+    echo "Cannot delete user: " . $e->getMessage();
+}
+```
+
+### Delete vs Destroy
+
+```php
+// delete() - Simple deletion, NO cascade
+$user = User::find(1);
+$user->delete(); // Only deletes user, leaves posts orphaned
+
+// destroy() - Respects dependent strategies
+$user = User::find(1);
+$user->destroy(); // Cascades to related records based on dependent attribute
 ```
 
 ## Attribute Reference
