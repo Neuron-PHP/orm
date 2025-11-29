@@ -155,4 +155,75 @@ class BelongsToManyRelation extends Relation
 			);
 		}
 	}
+
+	/**
+	 * Handle dependent cascade when parent is destroyed.
+	 *
+	 * For BelongsToMany relationships:
+	 * - Destroy: Deletes related records AND pivot entries
+	 * - DeleteAll: Deletes only pivot entries (default behavior)
+	 * - Nullify: Same as DeleteAll (deletes pivot entries)
+	 * - Restrict: Prevents deletion if pivot entries exist
+	 *
+	 * @param \Neuron\Orm\DependentStrategy $strategy
+	 * @return void
+	 * @throws \Neuron\Orm\Exceptions\RelationException
+	 */
+	public function handleDependent( \Neuron\Orm\DependentStrategy $strategy ): void
+	{
+		$parentKeyValue = $this->_parent->getAttribute( $this->_parentKey );
+
+		if( !$parentKeyValue )
+		{
+			return;
+		}
+
+		switch( $strategy )
+		{
+			case \Neuron\Orm\DependentStrategy::Destroy:
+				// Load all related records and call destroy() on each, then delete pivot entries
+				$related = $this->load();
+				foreach( $related as $record )
+				{
+					$record->destroy();
+				}
+
+				// Delete pivot table entries
+				$stmt = $this->_pdo->prepare(
+					"DELETE FROM {$this->_pivotTable} WHERE {$this->_foreignPivotKey} = ?"
+				);
+				$stmt->execute( [ $parentKeyValue ] );
+				break;
+
+			case \Neuron\Orm\DependentStrategy::DeleteAll:
+			case \Neuron\Orm\DependentStrategy::Nullify:
+				// For many-to-many, just delete the pivot table entries
+				$stmt = $this->_pdo->prepare(
+					"DELETE FROM {$this->_pivotTable} WHERE {$this->_foreignPivotKey} = ?"
+				);
+				$stmt->execute( [ $parentKeyValue ] );
+				break;
+
+			case \Neuron\Orm\DependentStrategy::Restrict:
+				// Check if any pivot table entries exist
+				$stmt = $this->_pdo->prepare(
+					"SELECT COUNT(*) as count FROM {$this->_pivotTable} WHERE {$this->_foreignPivotKey} = ?"
+				);
+				$stmt->execute( [ $parentKeyValue ] );
+				$result = $stmt->fetch( PDO::FETCH_ASSOC );
+
+				if( $result['count'] > 0 )
+				{
+					throw new \Neuron\Orm\Exceptions\RelationException(
+						sprintf(
+							'Cannot delete %s because it has %d associated %s records',
+							get_class( $this->_parent ),
+							$result['count'],
+							$this->_relatedModel
+						)
+					);
+				}
+				break;
+		}
+	}
 }

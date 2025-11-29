@@ -54,4 +54,12 @@ abstract class Relation
 	{
 		return $this->_relatedModel;
 	}
+
+	/**
+	 * Handle dependent cascade when parent is destroyed.
+	 *
+	 * @param \Neuron\Orm\DependentStrategy $strategy
+	 * @return void
+	 */
+	abstract public function handleDependent( \Neuron\Orm\DependentStrategy $strategy ): void;
 }

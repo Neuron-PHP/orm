@@ -497,6 +497,355 @@ abstract class Model
 	}
 
 	/**
+	 * Create a new model and save it to the database.
+	 *
+	 * @param array $attributes
+	 * @return static
+	 * @throws ModelException
+	 */
+	public static function create( array $attributes ): static
+	{
+		$instance = static::fromArray( $attributes );
+		$instance->save();
+		return $instance;
+	}
+
+	/**
+	 * Save the model to the database (insert or update).
+	 *
+	 * @return bool
+	 * @throws ModelException
+	 */
+	public function save(): bool
+	{
+		if( $this->exists() )
+		{
+			return $this->performUpdate();
+		}
+		else
+		{
+			return $this->performInsert();
+		}
+	}
+
+	/**
+	 * Update the model's attributes and save to database.
+	 *
+	 * @param array $attributes
+	 * @return bool
+	 * @throws ModelException
+	 */
+	public function update( array $attributes ): bool
+	{
+		$this->fill( $attributes );
+		return $this->save();
+	}
+
+	/**
+	 * Fill the model with an array of attributes.
+	 *
+	 * @param array $attributes
+	 * @return self
+	 */
+	public function fill( array $attributes ): self
+	{
+		foreach( $attributes as $key => $value )
+		{
+			$this->setAttribute( $key, $value );
+		}
+
+		return $this;
+	}
+
+	/**
+	 * Check if the model exists in the database.
+	 *
+	 * @return bool
+	 */
+	public function exists(): bool
+	{
+		$primaryKey = static::getPrimaryKey();
+		$id = $this->getAttribute( $primaryKey );
+
+		return $id !== null && $id > 0;
+	}
+
+	/**
+	 * Convert the model to an array.
+	 *
+	 * @return array
+	 */
+	public function toArray(): array
+	{
+		$data = [];
+		$reflection = new ReflectionClass( $this );
+
+		foreach( $reflection->getProperties() as $property )
+		{
+			// Skip static properties
+			if( $property->isStatic() )
+			{
+				continue;
+			}
+
+			$propertyName = $property->getName();
+
+			// Skip relations cache and internal properties
+			if( $propertyName === '_loadedRelations' || $propertyName === '_relationCache' || !str_starts_with( $propertyName, '_' ) )
+			{
+				continue;
+			}
+
+			// Skip properties with relation attributes
+			$hasRelation = false;
+			foreach( $property->getAttributes() as $attribute )
+			{
+				$attrName = $attribute->getName();
+				if( in_array( $attrName, [
+					BelongsTo::class,
+					HasMany::class,
+					HasOne::class,
+					BelongsToMany::class
+				] ) )
+				{
+					$hasRelation = true;
+					break;
+				}
+			}
+
+			if( $hasRelation )
+			{
+				continue;
+			}
+
+			// Convert property name to snake_case column name
+			$columnName = $this->propertyToColumn( $propertyName );
+			$value = $property->getValue( $this );
+
+			// Skip null values for auto-increment IDs on insert
+			if( $columnName === static::getPrimaryKey() && $value === null )
+			{
+				continue;
+			}
+
+			$data[ $columnName ] = $value;
+		}
+
+		return $data;
+	}
+
+	/**
+	 * Convert property name to database column name.
+	 *
+	 * @param string $propertyName
+	 * @return string
+	 */
+	protected function propertyToColumn( string $propertyName ): string
+	{
+		// Remove leading underscore
+		$name = ltrim( $propertyName, '_' );
+
+		// Convert camelCase to snake_case
+		$name = strtolower( preg_replace( '/([a-z])([A-Z])/', '$1_$2', $name ) );
+
+		return $name;
+	}
+
+	/**
+	 * Perform an insert operation.
+	 *
+	 * @return bool
+	 * @throws ModelException
+	 */
+	protected function performInsert(): bool
+	{
+		$pdo = self::getPdo();
+		$table = static::getTableName();
+		$data = $this->toArray();
+
+		$columns = array_keys( $data );
+		$placeholders = array_fill( 0, count( $columns ), '?' );
+
+		$sql = sprintf(
+			"INSERT INTO %s (%s) VALUES (%s)",
+			$table,
+			implode( ', ', $columns ),
+			implode( ', ', $placeholders )
+		);
+
+		$stmt = $pdo->prepare( $sql );
+		$result = $stmt->execute( array_values( $data ) );
+
+		if( $result )
+		{
+			$lastId = $pdo->lastInsertId();
+			if( $lastId )
+			{
+				$this->setAttribute( static::getPrimaryKey(), (int)$lastId );
+			}
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Perform an update operation.
+	 *
+	 * @return bool
+	 * @throws ModelException
+	 */
+	protected function performUpdate(): bool
+	{
+		$pdo = self::getPdo();
+		$table = static::getTableName();
+		$primaryKey = static::getPrimaryKey();
+		$data = $this->toArray();
+
+		// Remove primary key from data
+		$id = $data[ $primaryKey ];
+		unset( $data[ $primaryKey ] );
+
+		$setClauses = [];
+		foreach( array_keys( $data ) as $column )
+		{
+			$setClauses[] = "{$column} = ?";
+		}
+
+		$sql = sprintf(
+			"UPDATE %s SET %s WHERE %s = ?",
+			$table,
+			implode( ', ', $setClauses ),
+			$primaryKey
+		);
+
+		$bindings = array_values( $data );
+		$bindings[] = $id;
+
+		$stmt = $pdo->prepare( $sql );
+		return $stmt->execute( $bindings );
+	}
+
+	/**
+	 * Delete the model from the database with dependent cascade.
+	 *
+	 * @return bool
+	 * @throws ModelException
+	 * @throws RelationException
+	 */
+	public function destroy(): bool
+	{
+		if( !$this->exists() )
+		{
+			return false;
+		}
+
+		// Handle dependent relations first
+		$this->handleDependentRelations();
+
+		// Delete the model
+		$pdo = self::getPdo();
+		$table = static::getTableName();
+		$primaryKey = static::getPrimaryKey();
+		$id = $this->getAttribute( $primaryKey );
+
+		$sql = "DELETE FROM {$table} WHERE {$primaryKey} = ?";
+		$stmt = $pdo->prepare( $sql );
+
+		return $stmt->execute( [ $id ] );
+	}
+
+	/**
+	 * Delete one or more models by ID.
+	 *
+	 * @param int|array $ids
+	 * @return int Number of records deleted
+	 * @throws ModelException
+	 */
+	public static function destroyMany( int|array $ids ): int
+	{
+		if( !is_array( $ids ) )
+		{
+			$ids = [ $ids ];
+		}
+
+		$count = 0;
+		foreach( $ids as $id )
+		{
+			$model = static::find( $id );
+			if( $model && $model->destroy() )
+			{
+				$count++;
+			}
+		}
+
+		return $count;
+	}
+
+	/**
+	 * Delete the model without handling dependents (simple delete).
+	 *
+	 * @return bool
+	 * @throws ModelException
+	 */
+	public function delete(): bool
+	{
+		if( !$this->exists() )
+		{
+			return false;
+		}
+
+		$pdo = self::getPdo();
+		$table = static::getTableName();
+		$primaryKey = static::getPrimaryKey();
+		$id = $this->getAttribute( $primaryKey );
+
+		$sql = "DELETE FROM {$table} WHERE {$primaryKey} = ?";
+		$stmt = $pdo->prepare( $sql );
+
+		return $stmt->execute( [ $id ] );
+	}
+
+	/**
+	 * Handle dependent relations before destroying the model.
+	 *
+	 * @return void
+	 * @throws RelationException
+	 */
+	protected function handleDependentRelations(): void
+	{
+		$reflection = new ReflectionClass( $this );
+
+		foreach( $reflection->getProperties() as $property )
+		{
+			$attributes = $property->getAttributes();
+
+			foreach( $attributes as $attribute )
+			{
+				$instance = $attribute->newInstance();
+
+				// Check if it has a dependent strategy
+				if( !property_exists( $instance, 'dependent' ) || !$instance->dependent )
+				{
+					continue;
+				}
+
+				// Get the relation metadata
+				$propertyName = ltrim( $property->getName(), '_' );
+				$metadata = $this->getRelationMetadata( $propertyName );
+
+				if( !$metadata )
+				{
+					continue;
+				}
+
+				// Create and handle the relation
+				$relation = $this->createRelation( $propertyName, $metadata );
+				$relation->handleDependent( $instance->dependent );
+			}
+		}
+	}
+
+	/**
 	 * Create model instance from array data.
 	 * This should be implemented by child classes.
 	 *

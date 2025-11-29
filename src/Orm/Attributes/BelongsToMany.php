@@ -23,6 +23,7 @@ class BelongsToMany
 	 * @param string|null $relatedPivotKey The foreign key in pivot table for related model
 	 * @param string|null $parentKey The parent key column name (default: id)
 	 * @param string|null $relatedKey The related key column name (default: id)
+	 * @param DependentStrategy|null $dependent Cascade behavior when parent is destroyed
 	 */
 	public function __construct(
 		public readonly string $relatedModel,
@@ -30,6 +31,7 @@ class BelongsToMany
 		public readonly ?string $foreignPivotKey = null,
 		public readonly ?string $relatedPivotKey = null,
 		public readonly ?string $parentKey = 'id',
-		public readonly ?string $relatedKey = 'id'
+		public readonly ?string $relatedKey = 'id',
+		public readonly ?\Neuron\Orm\DependentStrategy $dependent = null
 	) {}
 }
