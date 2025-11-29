@@ -14,7 +14,7 @@
 		"php": "^8.4",
 		"ext-pdo": "*",
 		"neuron-php/core": "0.8.*",
-		"neuron-php/data": "0.8.*"
+		"neuron-php/data": "0.9.*"
 	},
 	"require-dev": {
 		"phpunit/phpunit": "9.*"
