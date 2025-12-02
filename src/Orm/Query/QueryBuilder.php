@@ -98,6 +98,36 @@ class QueryBuilder
 	}
 
 	/**
+	 * Add a WHERE IN clause.
+	 *
+	 * @param string $column
+	 * @param array $values
+	 * @return $this
+	 */
+	public function whereIn( string $column, array $values ): self
+	{
+		if( empty( $values ) )
+		{
+			return $this;
+		}
+
+		$this->_wheres[] = [
+			'column' => $column,
+			'operator' => 'IN',
+			'value' => $values,
+			'type' => 'AND'
+		];
+
+		// Add all values to bindings
+		foreach( $values as $value )
+		{
+			$this->_bindings[] = $value;
+		}
+
+		return $this;
+	}
+
+	/**
 	 * Specify relations to eager load.
 	 *
 	 * @param array|string $relations
@@ -316,7 +346,16 @@ class QueryBuilder
 
 		foreach( $this->_wheres as $index => $where )
 		{
-			$clause = "{$where['column']} {$where['operator']} ?";
+			// Handle IN operator differently
+			if( $where['operator'] === 'IN' )
+			{
+				$placeholders = implode( ',', array_fill( 0, count( $where['value'] ), '?' ) );
+				$clause = "{$where['column']} IN ({$placeholders})";
+			}
+			else
+			{
+				$clause = "{$where['column']} {$where['operator']} ?";
+			}
 
 			if( $index > 0 )
 			{
