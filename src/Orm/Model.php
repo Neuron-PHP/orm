@@ -204,6 +204,27 @@ abstract class Model
 	}
 
 	/**
+	 * Get a relation instance (for calling sync/attach/detach methods).
+	 *
+	 * @param string $name Relation name
+	 * @return BelongsToRelation|HasManyRelation|HasOneRelation|BelongsToManyRelation
+	 * @throws RelationException
+	 */
+	public function relation( string $name )
+	{
+		$relationMetadata = $this->getRelationMetadata( $name );
+
+		if( !$relationMetadata )
+		{
+			throw new RelationException(
+				sprintf( 'Relation %s not found on %s', $name, static::class )
+			);
+		}
+
+		return $this->createRelation( $name, $relationMetadata );
+	}
+
+	/**
 	 * Get relation metadata for a property.
 	 *
 	 * @param string $propertyName
@@ -449,6 +470,18 @@ abstract class Model
 	public static function where( string $column, mixed $operator, mixed $value = null ): QueryBuilder
 	{
 		return static::query()->where( $column, $operator, $value );
+	}
+
+	/**
+	 * Start a query with a where in clause.
+	 *
+	 * @param string $column
+	 * @param array $values
+	 * @return QueryBuilder
+	 */
+	public static function whereIn( string $column, array $values ): QueryBuilder
+	{
+		return static::query()->whereIn( $column, $values );
 	}
 
 	/**

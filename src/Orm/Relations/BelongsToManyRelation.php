@@ -226,4 +226,105 @@ class BelongsToManyRelation extends Relation
 				break;
 		}
 	}
+
+	/**
+	 * Sync the pivot table with the given IDs.
+	 * Removes all existing pivot entries and creates new ones.
+	 *
+	 * @param array $ids Array of related model IDs
+	 * @return void
+	 */
+	public function sync( array $ids ): void
+	{
+		$parentKeyValue = $this->_parent->getAttribute( $this->_parentKey );
+
+		if( !$parentKeyValue )
+		{
+			return;
+		}
+
+		// Delete existing pivot entries
+		$stmt = $this->_pdo->prepare(
+			"DELETE FROM {$this->_pivotTable} WHERE {$this->_foreignPivotKey} = ?"
+		);
+		$stmt->execute( [ $parentKeyValue ] );
+
+		// Insert new pivot entries
+		if( !empty( $ids ) )
+		{
+			$this->attach( $ids );
+		}
+	}
+
+	/**
+	 * Attach related models to the pivot table.
+	 *
+	 * @param array|int $ids Single ID or array of IDs
+	 * @return void
+	 */
+	public function attach( array|int $ids ): void
+	{
+		$parentKeyValue = $this->_parent->getAttribute( $this->_parentKey );
+
+		if( !$parentKeyValue )
+		{
+			return;
+		}
+
+		if( !is_array( $ids ) )
+		{
+			$ids = [ $ids ];
+		}
+
+		$stmt = $this->_pdo->prepare(
+			"INSERT INTO {$this->_pivotTable} ({$this->_foreignPivotKey}, {$this->_relatedPivotKey})
+			VALUES (?, ?)"
+		);
+
+		foreach( $ids as $id )
+		{
+			$stmt->execute( [ $parentKeyValue, $id ] );
+		}
+	}
+
+	/**
+	 * Detach related models from the pivot table.
+	 *
+	 * @param array|int|null $ids Single ID, array of IDs, or null to detach all
+	 * @return void
+	 */
+	public function detach( array|int|null $ids = null ): void
+	{
+		$parentKeyValue = $this->_parent->getAttribute( $this->_parentKey );
+
+		if( !$parentKeyValue )
+		{
+			return;
+		}
+
+		if( $ids === null )
+		{
+			// Detach all
+			$stmt = $this->_pdo->prepare(
+				"DELETE FROM {$this->_pivotTable} WHERE {$this->_foreignPivotKey} = ?"
+			);
+			$stmt->execute( [ $parentKeyValue ] );
+		}
+		else
+		{
+			if( !is_array( $ids ) )
+			{
+				$ids = [ $ids ];
+			}
+
+			$placeholders = implode( ',', array_fill( 0, count( $ids ), '?' ) );
+			$stmt = $this->_pdo->prepare(
+				"DELETE FROM {$this->_pivotTable}
+				WHERE {$this->_foreignPivotKey} = ? AND {$this->_relatedPivotKey} IN ({$placeholders})"
+			);
+
+			$bindings = array_merge( [ $parentKeyValue ], $ids );
+			$stmt->execute( $bindings );
+		}
+	}
 }
