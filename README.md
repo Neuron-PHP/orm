@@ -1,3 +1,5 @@
+[![CI](https://github.com/Neuron-PHP/orm/actions/workflows/ci.yml/badge.svg)](https://github.com/Neuron-PHP/orm/actions)
+[![codecov](https://codecov.io/gh/Neuron-PHP/orm/graph/badge.svg)](https://codecov.io/gh/Neuron-PHP/orm)
 # Neuron ORM
 
 Lightweight ORM component with attribute-based relation management for Neuron-PHP framework. Provides a Rails-like interface for defining and working with database relationships using PHP 8.4 attributes.

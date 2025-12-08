@@ -13,3 +13,5 @@ build/
 CLAUDE.md
 /cache/
 /.claude/
+
+coverage.xml
