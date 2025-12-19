@@ -351,6 +351,46 @@ class QueryBuilder
 	}
 
 	/**
+	 * Atomically update column values.
+	 *
+	 * This method performs an atomic UPDATE query that sets multiple columns to new values.
+	 * This avoids race conditions that occur with the fetch-modify-save pattern under
+	 * concurrent requests.
+	 *
+	 * @param array $attributes Associative array of column => value pairs
+	 * @return int Number of rows updated
+	 */
+	public function update( array $attributes ): int
+	{
+		if( empty( $attributes ) )
+		{
+			return 0;
+		}
+
+		$setClauses = [];
+		$bindings = [];
+
+		foreach( $attributes as $column => $value )
+		{
+			$setClauses[] = "{$column} = ?";
+			$bindings[] = $value;
+		}
+
+		$sql = "UPDATE {$this->_table} SET " . implode( ', ', $setClauses );
+
+		if( !empty( $this->_wheres ) )
+		{
+			$sql .= ' WHERE ' . $this->buildWhereClause();
+			$bindings = array_merge( $bindings, $this->_bindings );
+		}
+
+		$stmt = $this->_pdo->prepare( $sql );
+		$stmt->execute( $bindings );
+
+		return $stmt->rowCount();
+	}
+
+	/**
 	 * Build the SQL query.
 	 *
 	 * @return string
