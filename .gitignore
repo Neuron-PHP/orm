@@ -10,8 +10,6 @@ build/
 .phpunit.result.cache
 /examples/test.log
 /examples/bad/test.log
-CLAUDE.md
 /cache/
-/.claude/
 
 coverage.xml
