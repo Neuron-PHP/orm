@@ -63,6 +63,84 @@ abstract class Model
 	}
 
 	/**
+	 * Begin a database transaction.
+	 *
+	 * @return bool True on success
+	 * @throws ModelException If PDO is not set or transaction fails
+	 */
+	public static function beginTransaction(): bool
+	{
+		$pdo = self::getPdo();
+		return $pdo->beginTransaction();
+	}
+
+	/**
+	 * Commit the current transaction.
+	 *
+	 * @return bool True on success
+	 * @throws ModelException If PDO is not set or commit fails
+	 */
+	public static function commit(): bool
+	{
+		$pdo = self::getPdo();
+		return $pdo->commit();
+	}
+
+	/**
+	 * Roll back the current transaction.
+	 *
+	 * @return bool True on success
+	 * @throws ModelException If PDO is not set or rollback fails
+	 */
+	public static function rollBack(): bool
+	{
+		$pdo = self::getPdo();
+		return $pdo->rollBack();
+	}
+
+	/**
+	 * Check if currently inside a transaction.
+	 *
+	 * @return bool True if inside a transaction
+	 * @throws ModelException If PDO is not set
+	 */
+	public static function inTransaction(): bool
+	{
+		$pdo = self::getPdo();
+		return $pdo->inTransaction();
+	}
+
+	/**
+	 * Execute a closure within a database transaction.
+	 *
+	 * If the closure executes successfully, the transaction is committed.
+	 * If an exception is thrown, the transaction is rolled back and the exception is re-thrown.
+	 *
+	 * @param callable $callback Function to execute within transaction
+	 * @return mixed The return value of the callback
+	 * @throws \Throwable If callback throws an exception
+	 * @throws ModelException If PDO is not set
+	 */
+	public static function transaction( callable $callback ): mixed
+	{
+		$pdo = self::getPdo();
+
+		$pdo->beginTransaction();
+
+		try
+		{
+			$result = $callback();
+			$pdo->commit();
+			return $result;
+		}
+		catch( \Throwable $e )
+		{
+			$pdo->rollBack();
+			throw $e;
+		}
+	}
+
+	/**
 	 * Get the table name for this model from the Table attribute.
 	 *
 	 * @return string
