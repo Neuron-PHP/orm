@@ -293,6 +293,64 @@ class QueryBuilder
 	}
 
 	/**
+	 * Atomically increment a column's value.
+	 *
+	 * This method performs an atomic UPDATE query that increments the column value
+	 * by the specified amount. This avoids race conditions that occur with the
+	 * fetch-increment-save pattern under concurrent requests.
+	 *
+	 * @param string $column The column to increment
+	 * @param int $amount The amount to increment by (default: 1)
+	 * @return int Number of rows updated
+	 */
+	public function increment( string $column, int $amount = 1 ): int
+	{
+		$sql = "UPDATE {$this->_table} SET {$column} = {$column} + ?";
+
+		$bindings = [ $amount ];
+
+		if( !empty( $this->_wheres ) )
+		{
+			$sql .= ' WHERE ' . $this->buildWhereClause();
+			$bindings = array_merge( $bindings, $this->_bindings );
+		}
+
+		$stmt = $this->_pdo->prepare( $sql );
+		$stmt->execute( $bindings );
+
+		return $stmt->rowCount();
+	}
+
+	/**
+	 * Atomically decrement a column's value.
+	 *
+	 * This method performs an atomic UPDATE query that decrements the column value
+	 * by the specified amount. This avoids race conditions that occur with the
+	 * fetch-decrement-save pattern under concurrent requests.
+	 *
+	 * @param string $column The column to decrement
+	 * @param int $amount The amount to decrement by (default: 1)
+	 * @return int Number of rows updated
+	 */
+	public function decrement( string $column, int $amount = 1 ): int
+	{
+		$sql = "UPDATE {$this->_table} SET {$column} = {$column} - ?";
+
+		$bindings = [ $amount ];
+
+		if( !empty( $this->_wheres ) )
+		{
+			$sql .= ' WHERE ' . $this->buildWhereClause();
+			$bindings = array_merge( $bindings, $this->_bindings );
+		}
+
+		$stmt = $this->_pdo->prepare( $sql );
+		$stmt->execute( $bindings );
+
+		return $stmt->rowCount();
+	}
+
+	/**
 	 * Build the SQL query.
 	 *
 	 * @return string
