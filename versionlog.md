@@ -1,3 +1,5 @@
+## 0.1.8
+
 ## 0.1.7 2025-12-22
 * Added group by support.
 
