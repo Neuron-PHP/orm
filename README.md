@@ -14,10 +14,12 @@ Lightweight ORM component with attribute-based relation management for Neuron-PH
 - **Multiple Relation Types**: BelongsTo, HasMany, HasOne, BelongsToMany
 - **Fluent Query Builder**: Chainable query methods with column selection and JOINs
 - **Transaction Support**: Full ACID transaction support with callbacks
-- **Aggregate Functions**: Built-in sum, avg, max, min methods
+- **Aggregate Functions**: Built-in sum, avg, max, min methods with GROUP BY support
+- **Raw Results**: Get raw arrays for aggregate queries and computed columns
+- **Pivot Table Management**: Attach, detach, and sync methods for many-to-many relations
 - **Framework Independent**: Works with existing PDO connections
 - **Lightweight**: Focused on essential ORM features
-- **Well Tested**: 88%+ code coverage with 150+ tests
+- **Well Tested**: 88%+ code coverage with 186 tests
 
 ## Installation
 
@@ -341,6 +343,53 @@ $results = Post::query()
     ->orderBy('total_views', 'DESC')
     ->get();
 ```
+
+### Raw Results
+
+When using aggregate functions or computed columns, use `getRaw()` to preserve the raw database results instead of hydrating them into models:
+
+```php
+// Get raw results with aggregate columns preserved
+$results = Category::query()
+    ->select(['categories.name', 'COUNT(posts.id) as post_count'])
+    ->leftJoin('posts', 'categories.id', '=', 'posts.category_id')
+    ->groupBy('categories.id')
+    ->orderBy('post_count', 'DESC')
+    ->getRaw();
+
+foreach ($results as $row) {
+    echo "{$row['name']}: {$row['post_count']} posts\n";
+    // $row is an array, not a model object
+}
+
+// Multiple aggregate functions
+$stats = Post::query()
+    ->select([
+        'category_id',
+        'COUNT(*) as count',
+        'SUM(view_count) as total_views',
+        'AVG(view_count) as avg_views'
+    ])
+    ->groupBy('category_id')
+    ->getRaw();
+
+// With complex queries
+$report = User::query()
+    ->select([
+        'users.role',
+        'COUNT(posts.id) as post_count',
+        'MAX(posts.created_at) as latest_post'
+    ])
+    ->leftJoin('posts', 'users.id', '=', 'posts.author_id')
+    ->groupBy('users.role')
+    ->getRaw();
+```
+
+**Note:** `getRaw()` returns an array of associative arrays instead of model objects. This is useful when:
+- Using aggregate functions (COUNT, SUM, AVG, etc.)
+- Selecting computed columns that don't exist on the model
+- Joining tables with custom column selections
+- Optimizing performance by skipping model hydration
 
 ### Increment & Decrement
 

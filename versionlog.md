@@ -1,3 +1,7 @@
+## 0.1.8 2025-12-22
+* Added attach, detach and sync methods for many-to-many relationships.
+* Added raw results support.
+
 ## 0.1.7 2025-12-22
 * Added group by support.
 
