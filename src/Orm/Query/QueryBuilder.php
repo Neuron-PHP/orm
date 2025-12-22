@@ -19,6 +19,8 @@ class QueryBuilder
 	private PDO $_pdo;
 	private string $_modelClass;
 	private string $_table;
+	private array $_select = ['*'];
+	private bool $_distinct = false;
 	private array $_wheres = [];
 	private array $_bindings = [];
 	private array $_with = [];
@@ -182,6 +184,71 @@ class QueryBuilder
 			'column' => $column,
 			'direction' => strtoupper( $direction )
 		];
+
+		return $this;
+	}
+
+	/**
+	 * Set the columns to select.
+	 *
+	 * @param string|array $columns Column name(s) to select
+	 * @return $this
+	 */
+	public function select( string|array $columns ): self
+	{
+		$this->_select = is_array( $columns ) ? $columns : [ $columns ];
+
+		return $this;
+	}
+
+	/**
+	 * Add columns to the existing select list.
+	 *
+	 * @param string|array $columns Column name(s) to add
+	 * @return $this
+	 */
+	public function addSelect( string|array $columns ): self
+	{
+		$columns = is_array( $columns ) ? $columns : [ $columns ];
+
+		// Remove default '*' if adding specific columns
+		if( $this->_select === ['*'] )
+		{
+			$this->_select = [];
+		}
+
+		$this->_select = array_merge( $this->_select, $columns );
+
+		return $this;
+	}
+
+	/**
+	 * Add a raw select expression.
+	 *
+	 * @param string $expression Raw SQL expression
+	 * @return $this
+	 */
+	public function selectRaw( string $expression ): self
+	{
+		// Remove default '*' if adding specific columns
+		if( $this->_select === ['*'] )
+		{
+			$this->_select = [];
+		}
+
+		$this->_select[] = $expression;
+
+		return $this;
+	}
+
+	/**
+	 * Add DISTINCT to the query.
+	 *
+	 * @return $this
+	 */
+	public function distinct(): self
+	{
+		$this->_distinct = true;
 
 		return $this;
 	}
@@ -391,13 +458,83 @@ class QueryBuilder
 	}
 
 	/**
+	 * Get the sum of a column.
+	 *
+	 * @param string $column
+	 * @return mixed
+	 */
+	public function sum( string $column ): mixed
+	{
+		return $this->aggregate( 'SUM', $column );
+	}
+
+	/**
+	 * Get the average of a column.
+	 *
+	 * @param string $column
+	 * @return mixed
+	 */
+	public function avg( string $column ): mixed
+	{
+		return $this->aggregate( 'AVG', $column );
+	}
+
+	/**
+	 * Get the maximum value of a column.
+	 *
+	 * @param string $column
+	 * @return mixed
+	 */
+	public function max( string $column ): mixed
+	{
+		return $this->aggregate( 'MAX', $column );
+	}
+
+	/**
+	 * Get the minimum value of a column.
+	 *
+	 * @param string $column
+	 * @return mixed
+	 */
+	public function min( string $column ): mixed
+	{
+		return $this->aggregate( 'MIN', $column );
+	}
+
+	/**
+	 * Execute an aggregate function.
+	 *
+	 * @param string $function
+	 * @param string $column
+	 * @return mixed
+	 */
+	protected function aggregate( string $function, string $column ): mixed
+	{
+		$sql = "SELECT {$function}({$column}) as aggregate FROM {$this->_table}";
+
+		if( !empty( $this->_wheres ) )
+		{
+			$sql .= ' WHERE ' . $this->buildWhereClause();
+		}
+
+		$stmt = $this->_pdo->prepare( $sql );
+		$stmt->execute( $this->_bindings );
+
+		$result = $stmt->fetch( PDO::FETCH_ASSOC );
+
+		return $result['aggregate'];
+	}
+
+	/**
 	 * Build the SQL query.
 	 *
 	 * @return string
 	 */
 	protected function buildSql(): string
 	{
-		$sql = "SELECT * FROM {$this->_table}";
+		$columns = implode( ', ', $this->_select );
+		$distinct = $this->_distinct ? 'DISTINCT ' : '';
+		$sql = "SELECT {$distinct}{$columns} FROM {$this->_table}";
 
 		if( !empty( $this->_wheres ) )
 		{

@@ -1,7 +1,8 @@
 ## 0.1.6
+* Added column selection.
+* Added join support.
 
 ## 0.1.5 2025-12-19
-
 ## 0.1.4 2025-12-19
 * Added increment and decrement methods to the ORM model.
 
@@ -9,7 +10,6 @@
 * Added transaction support.
 
 ## 0.1.2 2025-12-02
-
 ## 0.1.1 2025-11-28
 
 * Added dependency destroy capability.
