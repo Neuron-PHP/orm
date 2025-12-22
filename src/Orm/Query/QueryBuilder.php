@@ -399,6 +399,24 @@ class QueryBuilder
 	}
 
 	/**
+	 * Get all results as raw arrays without hydrating into models.
+	 *
+	 * This is useful for queries with aggregate functions, computed columns,
+	 * or when you need the raw database results without model overhead.
+	 *
+	 * @return array Array of associative arrays
+	 */
+	public function getRaw(): array
+	{
+		$sql = $this->buildSql();
+
+		$stmt = $this->_pdo->prepare( $sql );
+		$stmt->execute( $this->_bindings );
+
+		return $stmt->fetchAll( PDO::FETCH_ASSOC );
+	}
+
+	/**
 	 * Get the first result.
 	 *
 	 * @return Model|null
