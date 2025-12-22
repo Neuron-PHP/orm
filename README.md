@@ -12,9 +12,12 @@ Lightweight ORM component with attribute-based relation management for Neuron-PH
 - **Dependent Cascade**: Rails-style dependent destroy strategies for relations
 - **Lazy & Eager Loading**: Optimize database queries automatically
 - **Multiple Relation Types**: BelongsTo, HasMany, HasOne, BelongsToMany
-- **Fluent Query Builder**: Chainable query methods
+- **Fluent Query Builder**: Chainable query methods with column selection and JOINs
+- **Transaction Support**: Full ACID transaction support with callbacks
+- **Aggregate Functions**: Built-in sum, avg, max, min methods
 - **Framework Independent**: Works with existing PDO connections
 - **Lightweight**: Focused on essential ORM features
+- **Well Tested**: 88%+ code coverage with 150+ tests
 
 ## Installation
 
@@ -169,6 +172,19 @@ $post = Post::find(1);
 foreach ($post->categories as $category) {
     echo $category->name;
 }
+
+// Attach new relationships
+$post->relation('categories')->attach(3);           // Attach single category
+$post->relation('categories')->attach([4, 5]);      // Attach multiple
+
+// Detach relationships
+$post->relation('categories')->detach(3);           // Detach single
+$post->relation('categories')->detach([4, 5]);      // Detach multiple
+$post->relation('categories')->detach();            // Detach all
+
+// Sync relationships (replace all with new set)
+$post->relation('categories')->sync([1, 2, 3]);     // Keep only 1, 2, 3
+$post->relation('categories')->sync([]);            // Remove all
 ```
 
 ## Query Builder
@@ -180,6 +196,9 @@ The query builder provides a fluent interface for building database queries:
 $posts = Post::where('status', 'published')
     ->where('views', '>', 100)
     ->get();
+
+// Where in
+$posts = Post::whereIn('id', [1, 2, 3])->get();
 
 // Or where
 $posts = Post::where('status', 'published')
@@ -204,6 +223,208 @@ $posts = Post::where('status', 'published')
     ->orderBy('created_at', 'DESC')
     ->limit(5)
     ->get();
+```
+
+### Column Selection
+
+Select specific columns instead of fetching all columns:
+
+```php
+// Select specific columns
+$users = User::query()
+    ->select(['id', 'username', 'email'])
+    ->where('active', true)
+    ->get();
+
+// Add columns to existing selection
+$users = User::query()
+    ->select('id')
+    ->addSelect(['username', 'email'])
+    ->get();
+
+// Raw SQL expressions
+$posts = Post::query()
+    ->select(['posts.*'])
+    ->selectRaw('LENGTH(title) as title_length')
+    ->get();
+
+// Distinct results
+$usernames = User::query()
+    ->select('username')
+    ->distinct()
+    ->get();
+```
+
+### JOIN Support
+
+Perform SQL JOINs to combine data from multiple tables:
+
+```php
+// INNER JOIN
+$posts = Post::query()
+    ->select(['posts.*', 'users.username'])
+    ->join('users', 'posts.author_id', '=', 'users.id')
+    ->where('posts.status', 'published')
+    ->get();
+
+// LEFT JOIN
+$posts = Post::query()
+    ->leftJoin('users', 'posts.author_id', '=', 'users.id')
+    ->get();
+
+// Multiple JOINs with aliases
+$posts = Post::query()
+    ->from('posts', 'p')
+    ->select(['p.*', 'u.username', 'c.name as category_name'])
+    ->join('users u', 'p.author_id', '=', 'u.id')
+    ->leftJoin('categories c', 'p.category_id', '=', 'c.id')
+    ->orderBy('p.created_at', 'DESC')
+    ->get();
+
+// CROSS JOIN
+$combinations = Product::query()
+    ->crossJoin('colors')
+    ->get();
+```
+
+### Aggregate Functions
+
+Perform aggregate calculations directly in the query builder:
+
+```php
+// Sum
+$totalViews = Post::query()
+    ->where('status', 'published')
+    ->sum('view_count');
+
+// Average
+$avgAge = User::query()->avg('age');
+
+// Maximum
+$maxPrice = Product::query()->max('price');
+
+// Minimum
+$minPrice = Product::query()
+    ->where('in_stock', true)
+    ->min('price');
+```
+
+### GROUP BY
+
+Group results by one or more columns:
+
+```php
+// Count posts by category
+$results = Post::query()
+    ->select(['category_id', 'COUNT(*) as post_count'])
+    ->groupBy('category_id')
+    ->get();
+
+// Group by multiple columns
+$results = Post::query()
+    ->select(['category_id', 'status', 'COUNT(*) as count'])
+    ->groupBy(['category_id', 'status'])
+    ->get();
+
+// With JOIN and aggregation
+$results = Category::query()
+    ->select(['categories.name', 'COUNT(posts.id) as post_count'])
+    ->leftJoin('posts', 'categories.id', '=', 'posts.category_id')
+    ->groupBy('categories.id')
+    ->orderBy('post_count', 'DESC')
+    ->get();
+
+// Sum views by category
+$results = Post::query()
+    ->select(['category_id', 'SUM(view_count) as total_views'])
+    ->groupBy('category_id')
+    ->orderBy('total_views', 'DESC')
+    ->get();
+```
+
+### Increment & Decrement
+
+Atomically increment or decrement numeric columns:
+
+```php
+// Increment view count by 1
+Post::where('id', 1)->increment('view_count');
+
+// Increment by specific amount
+Post::where('id', 1)->increment('view_count', 5);
+
+// Decrement
+User::where('id', 1)->decrement('credits', 10);
+```
+
+### Batch Updates
+
+Update multiple records with a single query:
+
+```php
+// Update all matching records
+$affected = Post::where('status', 'draft')
+    ->update(['status' => 'published']);
+
+echo "Updated {$affected} posts";
+```
+
+## Transactions
+
+Execute multiple database operations atomically with full ACID support:
+
+```php
+// Manual transaction control
+Model::beginTransaction();
+
+try {
+    $user = User::create(['username' => 'john']);
+    $profile = Profile::create(['user_id' => $user->getId()]);
+
+    Model::commit();
+} catch (Exception $e) {
+    Model::rollBack();
+    throw $e;
+}
+
+// Transaction with callback (automatic commit/rollback)
+$userId = Model::transaction(function() {
+    $user = User::create(['username' => 'jane']);
+
+    Profile::create([
+        'user_id' => $user->getId(),
+        'bio' => 'Hello world'
+    ]);
+
+    return $user->getId();
+});
+
+// Check transaction status
+if (Model::inTransaction()) {
+    echo "Currently in a transaction";
+}
+```
+
+### Transaction Methods
+
+```php
+// Begin a transaction
+Model::beginTransaction();
+
+// Commit the transaction
+Model::commit();
+
+// Rollback the transaction
+Model::rollBack();
+
+// Check if in transaction
+$inTransaction = Model::inTransaction();
+
+// Execute callback in transaction (auto commit/rollback)
+$result = Model::transaction(function() {
+    // Your database operations
+    return $someValue;
+});
 ```
 
 ## Eager Loading
@@ -398,6 +619,20 @@ class Post extends Model {}
 - `name` (string): Table name
 - `primaryKey` (string, optional): Primary key column name (default: 'id')
 
+### Column
+
+Maps a property to a database column (optional, for explicit mapping).
+
+```php
+#[Column(name: 'email_address', type: 'string', nullable: false)]
+private string $_email;
+```
+
+**Parameters:**
+- `name` (string, optional): Database column name if different from property
+- `type` (string, optional): Data type hint (string, int, float, bool, datetime, json)
+- `nullable` (bool, optional): Whether the column can be null (default: false)
+
 ### BelongsTo
 
 Defines a belongs-to (many-to-one) relationship.
@@ -470,6 +705,18 @@ private array $_categories = [];
 - PDO extension
 - neuron-php/core
 - neuron-php/data
+
+## Testing
+
+The ORM includes comprehensive test coverage:
+
+```bash
+# Run tests
+./vendor/bin/phpunit tests
+
+# Run tests with coverage
+./vendor/bin/phpunit tests --coverage-text --coverage-filter=src
+```
 
 ## License
 

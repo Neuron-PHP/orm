@@ -29,6 +29,7 @@ class QueryBuilder
 	private ?int $_limit = null;
 	private ?int $_offset = null;
 	private array $_orderBy = [];
+	private array $_groupBy = [];
 
 	/**
 	 * Constructor
@@ -186,6 +187,20 @@ class QueryBuilder
 			'column' => $column,
 			'direction' => strtoupper( $direction )
 		];
+
+		return $this;
+	}
+
+	/**
+	 * Add a GROUP BY clause.
+	 *
+	 * @param string|array $columns Column name(s) to group by
+	 * @return $this
+	 */
+	public function groupBy( string|array $columns ): self
+	{
+		$columns = is_array( $columns ) ? $columns : [ $columns ];
+		$this->_groupBy = array_merge( $this->_groupBy, $columns );
 
 		return $this;
 	}
@@ -661,6 +676,11 @@ class QueryBuilder
 		if( !empty( $this->_wheres ) )
 		{
 			$sql .= ' WHERE ' . $this->buildWhereClause();
+		}
+
+		if( !empty( $this->_groupBy ) )
+		{
+			$sql .= ' GROUP BY ' . implode( ', ', $this->_groupBy );
 		}
 
 		if( !empty( $this->_orderBy ) )
