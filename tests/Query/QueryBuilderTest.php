@@ -205,4 +205,67 @@ class QueryBuilderTest extends TestCase
 		$this->assertEquals( 2, $user->getId() );
 		$this->assertEquals( 'jane', $user->getUsername() );
 	}
+
+	public function test_query_builder_update(): void
+	{
+		// Update all users with status = active
+		$affected = User::where( 'username', 'john' )
+			->update( ['email' => 'newemail@example.com'] );
+
+		$this->assertEquals( 1, $affected );
+
+		// Verify the update
+		$user = User::where( 'username', 'john' )->first();
+		$this->assertEquals( 'newemail@example.com', $user->getEmail() );
+	}
+
+	public function test_query_builder_increment(): void
+	{
+		// First, create a model with a numeric column that can be incremented
+		// Since User doesn't have a suitable numeric field, let's use the id as a test
+		// In a real scenario, you'd have a counter or score field
+		$initialId = User::find( 1 )->getId();
+
+		// Note: This is a bit contrived since we're incrementing an ID,
+		// but it demonstrates the increment functionality
+		$affected = User::where( 'id', 1 )->increment( 'id', 100 );
+
+		$this->assertEquals( 1, $affected );
+
+		// Verify the increment (id should now be 101)
+		$user = User::where( 'username', 'john' )->first();
+		$this->assertEquals( $initialId + 100, $user->getId() );
+
+		// Reset for other tests
+		User::where( 'username', 'john' )->update( ['id' => $initialId] );
+	}
+
+	public function test_query_builder_decrement(): void
+	{
+		// Set a starting value
+		User::where( 'id', 1 )->update( ['id' => 100] );
+
+		$affected = User::where( 'username', 'john' )->decrement( 'id', 50 );
+
+		$this->assertEquals( 1, $affected );
+
+		// Verify the decrement
+		$user = User::where( 'username', 'john' )->first();
+		$this->assertEquals( 50, $user->getId() );
+
+		// Reset for other tests
+		User::where( 'username', 'john' )->update( ['id' => 1] );
+	}
+
+	public function test_query_builder_delete(): void
+	{
+		// Delete user with username = 'bob'
+		$affected = User::where( 'username', 'bob' )->delete();
+
+		$this->assertEquals( 1, $affected );
+
+		// Verify deletion
+		$this->assertNull( User::where( 'username', 'bob' )->first() );
+		$this->assertCount( 2, User::all() );
+	}
 }

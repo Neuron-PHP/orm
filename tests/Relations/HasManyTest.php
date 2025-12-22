@@ -104,4 +104,26 @@ class HasManyTest extends TestCase
 		$this->assertEquals( 'jane', $users[1]->getUsername() );
 		$this->assertCount( 1, $users[1]->posts );
 	}
+
+	public function test_get_related_model_returns_class_name(): void
+	{
+		$user = User::find( 1 );
+		$postsRelation = $user->relation( 'posts' );
+
+		$this->assertEquals( Post::class, $postsRelation->getRelatedModel() );
+	}
+
+	public function test_lazy_load_after_eager_load_returns_cached_value(): void
+	{
+		$users = User::with( 'posts' )->where( 'id', 1 )->get();
+
+		// Posts are already loaded via eager loading
+		$eagerPosts = $users[0]->posts;
+
+		// Accessing again should return the same cached value
+		$cachedPosts = $users[0]->posts;
+
+		$this->assertSame( $eagerPosts, $cachedPosts );
+		$this->assertCount( 3, $cachedPosts );
+	}
 }

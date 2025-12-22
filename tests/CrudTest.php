@@ -238,4 +238,95 @@ class CrudTest extends TestCase
 		$this->assertCount( 1, $remaining );
 		$this->assertEquals( 'published', $remaining[0]->getStatus() );
 	}
+
+	public function test_delete_non_existent_model_returns_false(): void
+	{
+		$user = new User();
+		// Model without ID shouldn't exist
+		$this->assertFalse( $user->delete() );
+	}
+
+	public function test_destroy_non_existent_model_returns_false(): void
+	{
+		$user = new User();
+		// Model without ID shouldn't exist
+		$this->assertFalse( $user->destroy() );
+	}
+
+	public function test_update_with_empty_array_returns_true(): void
+	{
+		$this->pdo->exec( "
+			INSERT INTO users (id, username, email)
+			VALUES (1, 'user1', 'user1@example.com')
+		" );
+
+		$user = User::find( 1 );
+		$result = $user->update( [] );
+
+		// Should return true even with no changes
+		$this->assertTrue( $result );
+	}
+
+	public function test_fill_returns_self_for_chaining(): void
+	{
+		$user = new User();
+		$result = $user->fill( ['username' => 'test'] );
+
+		$this->assertSame( $user, $result );
+		$this->assertEquals( 'test', $user->getUsername() );
+	}
+
+	public function test_save_new_model_with_auto_increment_id(): void
+	{
+		$user = new User();
+		$user->setUsername( 'newuser' );
+		$user->setEmail( 'newuser@example.com' );
+
+		// Before save, no ID
+		$this->assertNull( $user->getId() );
+
+		$user->save();
+
+		// After save, should have an ID assigned by database
+		$this->assertNotNull( $user->getId() );
+		$this->assertGreaterThan( 0, $user->getId() );
+	}
+
+	public function test_save_existing_model_preserves_id(): void
+	{
+		// Create and save
+		$user = new User();
+		$user->setUsername( 'existing' );
+		$user->setEmail( 'existing@example.com' );
+		$user->save();
+
+		$originalId = $user->getId();
+
+		// Update and save again
+		$user->setEmail( 'updated@example.com' );
+		$user->save();
+
+		// ID should remain the same
+		$this->assertEquals( $originalId, $user->getId() );
+
+		// Verify update persisted
+		$reloaded = User::find( $originalId );
+		$this->assertEquals( 'updated@example.com', $reloaded->getEmail() );
+	}
+
+	public function test_create_with_multiple_attributes(): void
+	{
+		$user = User::create([
+			'username' => 'multi',
+			'email' => 'multi@example.com'
+		]);
+
+		$this->assertNotNull( $user->getId() );
+		$this->assertEquals( 'multi', $user->getUsername() );
+		$this->assertEquals( 'multi@example.com', $user->getEmail() );
+
+		// Verify it's in database
+		$found = User::find( $user->getId() );
+		$this->assertNotNull( $found );
+	}
 }
