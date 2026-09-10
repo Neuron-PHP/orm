@@ -233,7 +233,6 @@ class QueryBuilderSelectTest extends TestCase
 	{
 		$reflection = new \ReflectionClass( $query );
 		$method = $reflection->getMethod( 'buildSql' );
-		$method->setAccessible( true );
 
 		return $method->invoke( $query );
 	}
