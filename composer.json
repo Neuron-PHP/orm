@@ -14,7 +14,9 @@
 		"php": "^8.4",
 		"ext-pdo": "*",
 		"neuron-php/core": "0.8.*",
-		"neuron-php/data": "0.9.*"
+		"neuron-php/data": "0.9.*",
+		"neuron-php/cli": "0.8.*",
+		"robmorgan/phinx": "^0.16"
 	},
 	"require-dev": {
 		"phpunit/phpunit": "9.*"
@@ -27,6 +29,11 @@
 	"autoload-dev": {
 		"psr-4": {
 			"Tests\\": "tests/"
+		}
+	},
+	"extra": {
+		"neuron": {
+			"cli-provider": "Neuron\\Orm\\Cli\\Provider"
 		}
 	},
 	"minimum-stability": "dev",

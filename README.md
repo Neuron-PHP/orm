@@ -18,6 +18,7 @@ Lightweight ORM component with attribute-based relation management for Neuron-PH
 - **Raw Results**: Get raw arrays for aggregate queries and computed columns
 - **Pivot Table Management**: Attach, detach, and sync methods for many-to-many relations
 - **Framework Independent**: Works with existing PDO connections
+- **Database Migrations**: Phinx-backed `db:migrate`, rollback, status, seed, and generate commands
 - **Lightweight**: Focused on essential ORM features
 - **Well Tested**: 88%+ code coverage with 186 tests
 
@@ -754,6 +755,22 @@ private array $_categories = [];
 - PDO extension
 - neuron-php/core
 - neuron-php/data
+- neuron-php/cli
+- robmorgan/phinx
+
+## Database Migrations
+
+The ORM component owns the Phinx bridge (`Neuron\Orm\Database\MigrationManager`) and the migrate-family CLI commands:
+
+```bash
+./vendor/bin/neuron db:migration:generate CreateUsersTable
+./vendor/bin/neuron db:migrate
+./vendor/bin/neuron db:migrate:status
+./vendor/bin/neuron db:rollback
+./vendor/bin/neuron db:seed
+```
+
+Configure `database:` and `migrations:` in `config/neuron.yaml`. CMS still authors and copies framework migration files; this package runs them.
 
 ## Testing
 
