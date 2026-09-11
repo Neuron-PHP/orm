@@ -1,4 +1,4 @@
-## 0.1.13
+## 0.1.13 2026-09-11
 * Relocated the migration commands to this package.
 
 ## 0.1.12 2026-09-10
