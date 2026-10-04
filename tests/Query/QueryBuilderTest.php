@@ -257,6 +257,50 @@ class QueryBuilderTest extends TestCase
 		User::where( 'username', 'john' )->update( ['id' => 1] );
 	}
 
+	public function testQueryBuilderWhereNull(): void
+	{
+		$this->pdo->exec( "
+			INSERT INTO posts (id, title, slug, body, author_id, status)
+			VALUES (6, 'Null Status', 'null-status', 'Content', 1, NULL)
+		" );
+
+		$posts = Post::query()->whereNull( 'status' )->get();
+
+		$this->assertCount( 1, $posts );
+		$this->assertEquals( 6, $posts[0]->getId() );
+	}
+
+	public function testQueryBuilderWhereNotNull(): void
+	{
+		$this->pdo->exec( "
+			INSERT INTO posts (id, title, slug, body, author_id, status)
+			VALUES (6, 'Null Status', 'null-status', 'Content', 1, NULL)
+		" );
+
+		$posts = Post::query()->whereNotNull( 'status' )->get();
+
+		$this->assertCount( 5, $posts );
+	}
+
+	public function testQueryBuilderOrWhereNull(): void
+	{
+		$this->pdo->exec( "
+			INSERT INTO posts (id, title, slug, body, author_id, status)
+			VALUES (6, 'Null Status', 'null-status', 'Content', 1, NULL)
+		" );
+
+		// (author_id = 3) OR (status IS NULL) => post 5 (bob) and post 6 (null)
+		$posts = Post::query()
+			->where( 'author_id', 3 )
+			->orWhereNull( 'status' )
+			->orderBy( 'id', 'ASC' )
+			->get();
+
+		$this->assertCount( 2, $posts );
+		$this->assertEquals( 5, $posts[0]->getId() );
+		$this->assertEquals( 6, $posts[1]->getId() );
+	}
+
 	public function test_query_builder_delete(): void
 	{
 		// Delete user with username = 'bob'
