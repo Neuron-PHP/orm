@@ -103,6 +103,60 @@ class QueryBuilder
 	}
 
 	/**
+	 * Add a WHERE column IS NULL clause.
+	 *
+	 * @param string $column
+	 * @return $this
+	 */
+	public function whereNull( string $column ): self
+	{
+		$this->_wheres[] = [
+			'column' => $column,
+			'operator' => 'IS NULL',
+			'value' => null,
+			'type' => 'AND'
+		];
+
+		return $this;
+	}
+
+	/**
+	 * Add an OR column IS NULL clause.
+	 *
+	 * @param string $column
+	 * @return $this
+	 */
+	public function orWhereNull( string $column ): self
+	{
+		$this->_wheres[] = [
+			'column' => $column,
+			'operator' => 'IS NULL',
+			'value' => null,
+			'type' => 'OR'
+		];
+
+		return $this;
+	}
+
+	/**
+	 * Add a WHERE column IS NOT NULL clause.
+	 *
+	 * @param string $column
+	 * @return $this
+	 */
+	public function whereNotNull( string $column ): self
+	{
+		$this->_wheres[] = [
+			'column' => $column,
+			'operator' => 'IS NOT NULL',
+			'value' => null,
+			'type' => 'AND'
+		];
+
+		return $this;
+	}
+
+	/**
 	 * Add a WHERE IN clause.
 	 *
 	 * @param string $column
@@ -746,6 +800,11 @@ class QueryBuilder
 			{
 				$placeholders = implode( ',', array_fill( 0, count( $where['value'] ), '?' ) );
 				$clause = "{$where['column']} IN ({$placeholders})";
+			}
+			// Nullary operators have no bound placeholder.
+			elseif( $where['operator'] === 'IS NULL' || $where['operator'] === 'IS NOT NULL' )
+			{
+				$clause = "{$where['column']} {$where['operator']}";
 			}
 			else
 			{
