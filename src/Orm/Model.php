@@ -2,6 +2,7 @@
 
 namespace Neuron\Orm;
 
+use Closure;
 use PDO;
 use ReflectionClass;
 use ReflectionProperty;
@@ -540,13 +541,23 @@ abstract class Model
 	/**
 	 * Start a query with a where clause.
 	 *
-	 * @param string $column
-	 * @param mixed $operator
+	 * @param string|Closure $column Column name, or a callback receiving a builder
+	 *                               to build a parenthesised group of clauses
+	 * @param mixed $operator Comparison operator, or the value in the two-argument form
 	 * @param mixed|null $value
 	 * @return QueryBuilder
 	 */
-	public static function where( string $column, mixed $operator, mixed $value = null ): QueryBuilder
+	public static function where( string|Closure $column, mixed $operator = null, mixed $value = null ): QueryBuilder
 	{
+		// Forwarded with the caller's own arity. The builder tells
+		// where( $column, $value ) apart from where( $column, $operator, $value ),
+		// so always passing three arguments would turn the two-argument form into
+		// an IS NULL test.
+		if( func_num_args() < 3 )
+		{
+			return static::query()->where( ...func_get_args() );
+		}
+
 		return static::query()->where( $column, $operator, $value );
 	}
 

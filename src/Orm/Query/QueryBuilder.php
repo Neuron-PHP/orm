@@ -2,6 +2,8 @@
 
 namespace Neuron\Orm\Query;
 
+use Closure;
+use Generator;
 use PDO;
 use Neuron\Orm\Model;
 use Neuron\Orm\Exceptions\ModelException;
@@ -30,6 +32,7 @@ class QueryBuilder
 	private ?int $_offset = null;
 	private array $_orderBy = [];
 	private array $_groupBy = [];
+	private array $_having = [];
 
 	/**
 	 * Constructor
@@ -52,25 +55,9 @@ class QueryBuilder
 	 * @param mixed|null $value
 	 * @return $this
 	 */
-	public function where( string $column, mixed $operator, mixed $value = null ): self
+	public function where( string|Closure $column, mixed $operator = null, mixed $value = null ): self
 	{
-		// If only 2 parameters, assume = operator
-		if( $value === null )
-		{
-			$value = $operator;
-			$operator = '=';
-		}
-
-		$this->_wheres[] = [
-			'column' => $column,
-			'operator' => $operator,
-			'value' => $value,
-			'type' => 'AND'
-		];
-
-		$this->_bindings[] = $value;
-
-		return $this;
+		return $this->addWhere( 'AND', $column, $operator, $value, func_num_args() );
 	}
 
 	/**
@@ -81,25 +68,170 @@ class QueryBuilder
 	 * @param mixed|null $value
 	 * @return $this
 	 */
-	public function orWhere( string $column, mixed $operator, mixed $value = null ): self
+	public function orWhere( string|Closure $column, mixed $operator = null, mixed $value = null ): self
 	{
-		// If only 2 parameters, assume = operator
-		if( $value === null )
+		return $this->addWhere( 'OR', $column, $operator, $value, func_num_args() );
+	}
+
+	/**
+	 * Normalise and store a where clause.
+	 *
+	 * Handles the three call shapes:
+	 *   where( Closure )               -> a parenthesised nested group
+	 *   where( $column, $value )       -> column = value, or IS NULL when value is null
+	 *   where( $column, $op, $value )  -> column op value, or IS [NOT] NULL when value is null
+	 *
+	 * @param string $boolean AND or OR
+	 * @param string|Closure $column
+	 * @param mixed $operator
+	 * @param mixed $value
+	 * @param int $argCount Number of arguments the caller actually passed
+	 * @return $this
+	 */
+	protected function addWhere( string $boolean, string|Closure $column, mixed $operator, mixed $value, int $argCount ): self
+	{
+		if( $column instanceof Closure )
 		{
-			$value = $operator;
+			return $this->whereGroup( $boolean, $column );
+		}
+
+		// Two-argument form: the second argument is the value, the operator is '='.
+		if( $argCount < 3 )
+		{
+			$value    = $operator;
 			$operator = '=';
 		}
 
+		// A null value means an IS NULL / IS NOT NULL test; binding null to '=' or
+		// '!=' would compare against NULL and never match a row.
+		if( $value === null )
+		{
+			return $this->addNullWhere(
+				$boolean,
+				$column,
+				in_array( $operator, [ '!=', '<>' ], true ) ? 'IS NOT NULL' : 'IS NULL'
+			);
+		}
+
 		$this->_wheres[] = [
-			'column' => $column,
+			'kind'     => 'basic',
+			'column'   => $column,
 			'operator' => $operator,
-			'value' => $value,
-			'type' => 'OR'
+			'value'    => $value,
+			'type'     => $boolean
 		];
 
-		$this->_bindings[] = $value;
+		return $this;
+	}
+
+	/**
+	 * Store a parenthesised group of clauses built by a callback.
+	 *
+	 * The callback receives a fresh builder; only its where clauses are kept, which
+	 * is what makes `a AND ( b OR c )` expressible.
+	 *
+	 * @param string $boolean AND or OR
+	 * @param Closure $callback
+	 * @return $this
+	 */
+	protected function whereGroup( string $boolean, Closure $callback ): self
+	{
+		$nested = new self( $this->_pdo, $this->_modelClass );
+
+		$callback( $nested );
+
+		if( !empty( $nested->_wheres ) )
+		{
+			$this->_wheres[] = [
+				'kind'   => 'group',
+				'wheres' => $nested->_wheres,
+				'type'   => $boolean
+			];
+		}
 
 		return $this;
+	}
+
+	/**
+	 * Store an IS NULL / IS NOT NULL clause.
+	 *
+	 * @param string $boolean AND or OR
+	 * @param string $column
+	 * @param string $operator IS NULL or IS NOT NULL
+	 * @return $this
+	 */
+	protected function addNullWhere( string $boolean, string $column, string $operator ): self
+	{
+		$this->_wheres[] = [
+			'kind'     => 'null',
+			'column'   => $column,
+			'operator' => $operator,
+			'value'    => null,
+			'type'     => $boolean
+		];
+
+		return $this;
+	}
+
+	/**
+	 * Add a raw SQL where clause.
+	 *
+	 * The expression is injected verbatim, so never build it from user input;
+	 * pass values through $bindings instead.
+	 *
+	 * @param string $sql Raw SQL predicate, using ? placeholders
+	 * @param array $bindings Values for the placeholders
+	 * @return $this
+	 */
+	public function whereRaw( string $sql, array $bindings = [] ): self
+	{
+		return $this->addRawWhere( 'AND', $sql, $bindings );
+	}
+
+	/**
+	 * Add a raw SQL where clause joined with OR.
+	 *
+	 * @param string $sql Raw SQL predicate, using ? placeholders
+	 * @param array $bindings Values for the placeholders
+	 * @return $this
+	 */
+	public function orWhereRaw( string $sql, array $bindings = [] ): self
+	{
+		return $this->addRawWhere( 'OR', $sql, $bindings );
+	}
+
+	/**
+	 * @param string $boolean AND or OR
+	 * @param string $sql
+	 * @param array $bindings
+	 * @return $this
+	 */
+	protected function addRawWhere( string $boolean, string $sql, array $bindings ): self
+	{
+		$this->_wheres[] = [
+			'kind'     => 'raw',
+			'sql'      => $sql,
+			'bindings' => array_values( $bindings ),
+			'type'     => $boolean
+		];
+
+		return $this;
+	}
+
+	/**
+	 * Compare two columns against each other.
+	 *
+	 * Both sides are treated as SQL identifiers or expressions, not as bound
+	 * values, which is what where() cannot express.
+	 *
+	 * @param string $first
+	 * @param string $operator
+	 * @param string $second
+	 * @return $this
+	 */
+	public function whereColumn( string $first, string $operator, string $second ): self
+	{
+		return $this->addRawWhere( 'AND', "{$first} {$operator} {$second}", [] );
 	}
 
 	/**
@@ -110,14 +242,7 @@ class QueryBuilder
 	 */
 	public function whereNull( string $column ): self
 	{
-		$this->_wheres[] = [
-			'column' => $column,
-			'operator' => 'IS NULL',
-			'value' => null,
-			'type' => 'AND'
-		];
-
-		return $this;
+		return $this->addNullWhere( 'AND', $column, 'IS NULL' );
 	}
 
 	/**
@@ -128,14 +253,7 @@ class QueryBuilder
 	 */
 	public function orWhereNull( string $column ): self
 	{
-		$this->_wheres[] = [
-			'column' => $column,
-			'operator' => 'IS NULL',
-			'value' => null,
-			'type' => 'OR'
-		];
-
-		return $this;
+		return $this->addNullWhere( 'OR', $column, 'IS NULL' );
 	}
 
 	/**
@@ -146,14 +264,18 @@ class QueryBuilder
 	 */
 	public function whereNotNull( string $column ): self
 	{
-		$this->_wheres[] = [
-			'column' => $column,
-			'operator' => 'IS NOT NULL',
-			'value' => null,
-			'type' => 'AND'
-		];
+		return $this->addNullWhere( 'AND', $column, 'IS NOT NULL' );
+	}
 
-		return $this;
+	/**
+	 * Add an OR column IS NOT NULL clause.
+	 *
+	 * @param string $column
+	 * @return $this
+	 */
+	public function orWhereNotNull( string $column ): self
+	{
+		return $this->addNullWhere( 'OR', $column, 'IS NOT NULL' );
 	}
 
 	/**
@@ -165,23 +287,57 @@ class QueryBuilder
 	 */
 	public function whereIn( string $column, array $values ): self
 	{
+		return $this->addInWhere( 'AND', $column, $values, false );
+	}
+
+	/**
+	 * Add a WHERE NOT IN clause.
+	 *
+	 * @param string $column
+	 * @param array $values
+	 * @return $this
+	 */
+	public function whereNotIn( string $column, array $values ): self
+	{
+		return $this->addInWhere( 'AND', $column, $values, true );
+	}
+
+	/**
+	 * Add an OR WHERE IN clause.
+	 *
+	 * @param string $column
+	 * @param array $values
+	 * @return $this
+	 */
+	public function orWhereIn( string $column, array $values ): self
+	{
+		return $this->addInWhere( 'OR', $column, $values, false );
+	}
+
+	/**
+	 * @param string $boolean AND or OR
+	 * @param string $column
+	 * @param array $values
+	 * @param bool $not
+	 * @return $this
+	 */
+	protected function addInWhere( string $boolean, string $column, array $values, bool $not ): self
+	{
+		// An empty IN () is not valid SQL. An empty NOT IN excludes nothing, so the
+		// clause is dropped either way and the caller's other constraints still apply.
 		if( empty( $values ) )
 		{
 			return $this;
 		}
 
 		$this->_wheres[] = [
-			'column' => $column,
-			'operator' => 'IN',
-			'value' => $values,
-			'type' => 'AND'
+			'kind'     => 'in',
+			'column'   => $column,
+			'operator' => $not ? 'NOT IN' : 'IN',
+			'value'    => array_values( $values ),
+			'not'      => $not,
+			'type'     => $boolean
 		];
-
-		// Add all values to bindings
-		foreach( $values as $value )
-		{
-			$this->_bindings[] = $value;
-		}
 
 		return $this;
 	}
@@ -255,6 +411,57 @@ class QueryBuilder
 	{
 		$columns = is_array( $columns ) ? $columns : [ $columns ];
 		$this->_groupBy = array_merge( $this->_groupBy, $columns );
+
+		return $this;
+	}
+
+	/**
+	 * Add a HAVING clause, for filtering on aggregates after GROUP BY.
+	 *
+	 * @param string $column Column or aggregate expression
+	 * @param mixed $operator
+	 * @param mixed|null $value
+	 * @return $this
+	 */
+	public function having( string $column, mixed $operator = null, mixed $value = null ): self
+	{
+		$argCount = func_num_args();
+
+		if( $argCount < 3 )
+		{
+			$value    = $operator;
+			$operator = '=';
+		}
+
+		$this->_having[] = [
+			'kind'     => 'basic',
+			'column'   => $column,
+			'operator' => $operator,
+			'value'    => $value,
+			'type'     => 'AND'
+		];
+
+		return $this;
+	}
+
+	/**
+	 * Add a raw HAVING clause.
+	 *
+	 * The expression is injected verbatim, so never build it from user input;
+	 * pass values through $bindings instead.
+	 *
+	 * @param string $sql Raw SQL predicate, using ? placeholders
+	 * @param array $bindings Values for the placeholders
+	 * @return $this
+	 */
+	public function havingRaw( string $sql, array $bindings = [] ): self
+	{
+		$this->_having[] = [
+			'kind'     => 'raw',
+			'sql'      => $sql,
+			'bindings' => array_values( $bindings ),
+			'type'     => 'AND'
+		];
 
 		return $this;
 	}
@@ -433,7 +640,7 @@ class QueryBuilder
 		$sql = $this->buildSql();
 
 		$stmt = $this->_pdo->prepare( $sql );
-		$stmt->execute( $this->_bindings );
+		$this->bindAndExecute( $stmt, $this->_bindings );
 
 		$rows = $stmt->fetchAll( PDO::FETCH_ASSOC );
 
@@ -465,9 +672,108 @@ class QueryBuilder
 		$sql = $this->buildSql();
 
 		$stmt = $this->_pdo->prepare( $sql );
-		$stmt->execute( $this->_bindings );
+		$this->bindAndExecute( $stmt, $this->_bindings );
 
 		return $stmt->fetchAll( PDO::FETCH_ASSOC );
+	}
+
+	/**
+	 * Iterate the results one hydrated model at a time.
+	 *
+	 * Unlike get(), no array of every row is built, which is what makes large
+	 * result sets affordable. Relations are not eager loaded: with() needs the
+	 * full set up front, so accessing a relation inside the loop would query per
+	 * row. Use get() when you need with().
+	 *
+	 * @return Generator Yields one model per row
+	 */
+	public function cursor(): Generator
+	{
+		foreach( $this->cursorRaw() as $row )
+		{
+			yield $this->_modelClass::fromArray( $row );
+		}
+	}
+
+	/**
+	 * Iterate the raw result rows one at a time.
+	 *
+	 * The streaming counterpart to getRaw(), for aggregates, computed columns and
+	 * joined projections that do not map onto the model.
+	 *
+	 * @return Generator Yields one associative array per row
+	 */
+	public function cursorRaw(): Generator
+	{
+		$sql = $this->buildSql();
+
+		$stmt = $this->_pdo->prepare( $sql );
+		$this->bindAndExecute( $stmt, $this->_bindings );
+
+		try
+		{
+			while( $row = $stmt->fetch( PDO::FETCH_ASSOC ) )
+			{
+				yield $row;
+			}
+		}
+		finally
+		{
+			// Reached on an early break as well as normal exhaustion, so the
+			// statement never stays open holding the result set.
+			$stmt->closeCursor();
+		}
+	}
+
+	/**
+	 * The PDO driver name for the current connection.
+	 *
+	 * @return string
+	 */
+	protected function driverName(): string
+	{
+		return (string)$this->_pdo->getAttribute( PDO::ATTR_DRIVER_NAME );
+	}
+
+	/**
+	 * Bind values with their PHP types and execute the statement.
+	 *
+	 * Passing an array straight to PDOStatement::execute() binds every value as a
+	 * string. A string compared against a column is coerced by that column's type,
+	 * but an expression such as COUNT(*) in a HAVING clause has no type to coerce
+	 * against, so the comparison silently fails. Binding by type avoids that.
+	 *
+	 * @param \PDOStatement $stmt
+	 * @param array $bindings Positional values, in placeholder order
+	 * @return void
+	 */
+	protected function bindAndExecute( \PDOStatement $stmt, array $bindings ): void
+	{
+		$position = 1;
+
+		foreach( $bindings as $value )
+		{
+			$stmt->bindValue( $position++, $value, $this->paramTypeOf( $value ) );
+		}
+
+		$stmt->execute();
+	}
+
+	/**
+	 * Map a PHP value onto the PDO parameter type that preserves its semantics.
+	 *
+	 * @param mixed $value
+	 * @return int One of the PDO::PARAM_* constants
+	 */
+	protected function paramTypeOf( mixed $value ): int
+	{
+		return match( true )
+		{
+			is_int( $value )  => PDO::PARAM_INT,
+			is_bool( $value ) => PDO::PARAM_BOOL,
+			is_null( $value ) => PDO::PARAM_NULL,
+			default           => PDO::PARAM_STR
+		};
 	}
 
 	/**
@@ -512,7 +818,9 @@ class QueryBuilder
 	 */
 	public function count(): int
 	{
-		$sql = "SELECT COUNT(*) as count FROM {$this->_table}";
+		$this->_bindings = [];
+
+		$sql = "SELECT COUNT(*) as count FROM " . $this->buildFromClause();
 
 		if( !empty( $this->_wheres ) )
 		{
@@ -520,7 +828,7 @@ class QueryBuilder
 		}
 
 		$stmt = $this->_pdo->prepare( $sql );
-		$stmt->execute( $this->_bindings );
+		$this->bindAndExecute( $stmt, $this->_bindings );
 
 		$result = $stmt->fetch( PDO::FETCH_ASSOC );
 
@@ -534,6 +842,8 @@ class QueryBuilder
 	 */
 	public function delete(): int
 	{
+		$this->_bindings = [];
+
 		$sql = "DELETE FROM {$this->_table}";
 
 		if( !empty( $this->_wheres ) )
@@ -542,7 +852,7 @@ class QueryBuilder
 		}
 
 		$stmt = $this->_pdo->prepare( $sql );
-		$stmt->execute( $this->_bindings );
+		$this->bindAndExecute( $stmt, $this->_bindings );
 
 		return $stmt->rowCount();
 	}
@@ -560,6 +870,8 @@ class QueryBuilder
 	 */
 	public function increment( string $column, int $amount = 1 ): int
 	{
+		$this->_bindings = [];
+
 		$sql = "UPDATE {$this->_table} SET {$column} = {$column} + ?";
 
 		$bindings = [ $amount ];
@@ -571,7 +883,7 @@ class QueryBuilder
 		}
 
 		$stmt = $this->_pdo->prepare( $sql );
-		$stmt->execute( $bindings );
+		$this->bindAndExecute( $stmt, $bindings );
 
 		return $stmt->rowCount();
 	}
@@ -589,6 +901,8 @@ class QueryBuilder
 	 */
 	public function decrement( string $column, int $amount = 1 ): int
 	{
+		$this->_bindings = [];
+
 		$sql = "UPDATE {$this->_table} SET {$column} = {$column} - ?";
 
 		$bindings = [ $amount ];
@@ -600,7 +914,7 @@ class QueryBuilder
 		}
 
 		$stmt = $this->_pdo->prepare( $sql );
-		$stmt->execute( $bindings );
+		$this->bindAndExecute( $stmt, $bindings );
 
 		return $stmt->rowCount();
 	}
@@ -622,6 +936,8 @@ class QueryBuilder
 			return 0;
 		}
 
+		$this->_bindings = [];
+
 		$setClauses = [];
 		$bindings = [];
 
@@ -640,7 +956,7 @@ class QueryBuilder
 		}
 
 		$stmt = $this->_pdo->prepare( $sql );
-		$stmt->execute( $bindings );
+		$this->bindAndExecute( $stmt, $bindings );
 
 		return $stmt->rowCount();
 	}
@@ -698,7 +1014,9 @@ class QueryBuilder
 	 */
 	protected function aggregate( string $function, string $column ): mixed
 	{
-		$sql = "SELECT {$function}({$column}) as aggregate FROM {$this->_table}";
+		$this->_bindings = [];
+
+		$sql = "SELECT {$function}({$column}) as aggregate FROM " . $this->buildFromClause();
 
 		if( !empty( $this->_wheres ) )
 		{
@@ -706,11 +1024,38 @@ class QueryBuilder
 		}
 
 		$stmt = $this->_pdo->prepare( $sql );
-		$stmt->execute( $this->_bindings );
+		$this->bindAndExecute( $stmt, $this->_bindings );
 
 		$result = $stmt->fetch( PDO::FETCH_ASSOC );
 
 		return $result['aggregate'];
+	}
+
+	/**
+	 * Build the table reference: the table with its optional alias, followed by
+	 * any JOINs. Shared by every statement that reads from the table so aliases
+	 * and joins cannot drift between them.
+	 *
+	 * @return string
+	 */
+	protected function buildFromClause(): string
+	{
+		$from = $this->_tableAlias
+			? "{$this->_table} AS {$this->_tableAlias}"
+			: $this->_table;
+
+		foreach( $this->_joins as $join )
+		{
+			$from .= " {$join['type']} JOIN {$join['table']}";
+
+			// CROSS JOIN doesn't have ON condition
+			if( $join['type'] !== 'CROSS' )
+			{
+				$from .= " ON {$join['first']} {$join['operator']} {$join['second']}";
+			}
+		}
+
+		return $from;
 	}
 
 	/**
@@ -720,30 +1065,12 @@ class QueryBuilder
 	 */
 	protected function buildSql(): string
 	{
+		$this->_bindings = [];
+
 		$columns = implode( ', ', $this->_select );
 		$distinct = $this->_distinct ? 'DISTINCT ' : '';
 
-		// Build FROM clause with optional alias
-		$from = $this->_tableAlias
-			? "{$this->_table} AS {$this->_tableAlias}"
-			: $this->_table;
-
-		$sql = "SELECT {$distinct}{$columns} FROM {$from}";
-
-		// Add JOINs
-		if( !empty( $this->_joins ) )
-		{
-			foreach( $this->_joins as $join )
-			{
-				$sql .= " {$join['type']} JOIN {$join['table']}";
-
-				// CROSS JOIN doesn't have ON condition
-				if( $join['type'] !== 'CROSS' )
-				{
-					$sql .= " ON {$join['first']} {$join['operator']} {$join['second']}";
-				}
-			}
-		}
+		$sql = "SELECT {$distinct}{$columns} FROM " . $this->buildFromClause();
 
 		if( !empty( $this->_wheres ) )
 		{
@@ -753,6 +1080,11 @@ class QueryBuilder
 		if( !empty( $this->_groupBy ) )
 		{
 			$sql .= ' GROUP BY ' . implode( ', ', $this->_groupBy );
+		}
+
+		if( !empty( $this->_having ) )
+		{
+			$sql .= ' HAVING ' . $this->buildHavingClause();
 		}
 
 		if( !empty( $this->_orderBy ) )
@@ -771,13 +1103,16 @@ class QueryBuilder
 			$sql .= " LIMIT {$this->_limit}";
 		}
 
-		// SQLite requires LIMIT when using OFFSET
 		if( $this->_offset !== null )
 		{
-			if( $this->_limit === null )
+			// SQLite will not parse OFFSET without a preceding LIMIT, and accepts -1
+			// as "no limit". Postgres and MySQL both reject a negative LIMIT, so the
+			// placeholder is only emitted for the driver that needs it.
+			if( $this->_limit === null && $this->driverName() === 'sqlite' )
 			{
 				$sql .= " LIMIT -1";
 			}
+
 			$sql .= " OFFSET {$this->_offset}";
 		}
 
@@ -791,26 +1126,33 @@ class QueryBuilder
 	 */
 	protected function buildWhereClause(): string
 	{
+		return $this->compileWheres( $this->_wheres );
+	}
+
+	/**
+	 * Compile a list of where clauses into SQL, appending their bound values to
+	 * $this->_bindings in the order the placeholders appear.
+	 *
+	 * Bindings are collected here rather than when the clause is registered so that
+	 * nested groups and the HAVING clause stay in step with the generated SQL.
+	 *
+	 * @param array $wheres
+	 * @return string
+	 */
+	protected function compileWheres( array $wheres ): string
+	{
 		$clauses = [];
 
-		foreach( $this->_wheres as $index => $where )
+		foreach( $wheres as $index => $where )
 		{
-			// Handle IN operator differently
-			if( $where['operator'] === 'IN' )
+			$clause = $this->compileWhere( $where );
+
+			if( $clause === '' )
 			{
-				$placeholders = implode( ',', array_fill( 0, count( $where['value'] ), '?' ) );
-				$clause = "{$where['column']} IN ({$placeholders})";
-			}
-			// Nullary operators have no bound placeholder.
-			elseif( $where['operator'] === 'IS NULL' || $where['operator'] === 'IS NOT NULL' )
-			{
-				$clause = "{$where['column']} {$where['operator']}";
-			}
-			else
-			{
-				$clause = "{$where['column']} {$where['operator']} ?";
+				continue;
 			}
 
+			// The first clause carries no AND/OR; it is the start of the expression.
 			if( $index > 0 )
 			{
 				$clause = "{$where['type']} {$clause}";
@@ -820,5 +1162,59 @@ class QueryBuilder
 		}
 
 		return implode( ' ', $clauses );
+	}
+
+	/**
+	 * Compile a single where clause and collect its bindings.
+	 *
+	 * @param array $where
+	 * @return string
+	 */
+	protected function compileWhere( array $where ): string
+	{
+		// Entries predating the 'kind' key are plain column/operator/value clauses.
+		switch( $where['kind'] ?? 'basic' )
+		{
+			case 'group':
+				$inner = $this->compileWheres( $where['wheres'] );
+
+				return $inner === '' ? '' : "({$inner})";
+
+			case 'raw':
+				foreach( $where['bindings'] as $binding )
+				{
+					$this->_bindings[] = $binding;
+				}
+
+				return $where['sql'];
+
+			case 'in':
+				$placeholders = implode( ',', array_fill( 0, count( $where['value'] ), '?' ) );
+
+				foreach( $where['value'] as $value )
+				{
+					$this->_bindings[] = $value;
+				}
+
+				return "{$where['column']} {$where['operator']} ({$placeholders})";
+
+			case 'null':
+				return "{$where['column']} {$where['operator']}";
+
+			default:
+				$this->_bindings[] = $where['value'];
+
+				return "{$where['column']} {$where['operator']} ?";
+		}
+	}
+
+	/**
+	 * Compile the HAVING clause and collect its bindings.
+	 *
+	 * @return string
+	 */
+	protected function buildHavingClause(): string
+	{
+		return $this->compileWheres( $this->_having );
 	}
 }
