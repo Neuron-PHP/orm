@@ -1,3 +1,5 @@
+## 0.1.16
+
 ## 0.1.15 2026-10-08
 
 * Added whereRaw and orWhereRaw for predicates with no fluent equivalent.
