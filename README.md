@@ -13,6 +13,8 @@ Lightweight ORM component with attribute-based relation management for Neuron-PH
 - **Lazy & Eager Loading**: Optimize database queries automatically
 - **Multiple Relation Types**: BelongsTo, HasMany, HasOne, BelongsToMany
 - **Fluent Query Builder**: Chainable query methods with column selection and JOINs
+- **Raw & Grouped Predicates**: `whereRaw`, parenthesised `where(fn)` groups, `whereNotIn`, `whereColumn`, `having`
+- **Streaming Results**: `cursor()` and `cursorRaw()` walk large result sets without building an array
 - **Transaction Support**: Full ACID transaction support with callbacks
 - **Aggregate Functions**: Built-in sum, avg, max, min methods with GROUP BY support
 - **Raw Results**: Get raw arrays for aggregate queries and computed columns
@@ -200,13 +202,18 @@ $posts = Post::where('status', 'published')
     ->where('views', '>', 100)
     ->get();
 
-// Where in
+// Where in / not in
 $posts = Post::whereIn('id', [1, 2, 3])->get();
+$posts = Post::query()->whereNotIn('status', ['draft', 'archived'])->get();
 
 // Or where
 $posts = Post::where('status', 'published')
     ->orWhere('status', 'featured')
     ->get();
+
+// A null value means IS NULL rather than a comparison against NULL
+$posts = Post::query()->where('published_at', null)->get();      // IS NULL
+$posts = Post::query()->where('published_at', '!=', null)->get(); // IS NOT NULL
 
 // Order by
 $posts = Post::orderBy('created_at', 'DESC')->get();
@@ -227,6 +234,102 @@ $posts = Post::where('status', 'published')
     ->limit(5)
     ->get();
 ```
+
+### Raw Predicates
+
+Some predicates have no fluent equivalent: SQL functions, interval arithmetic, and
+comparisons between two columns. `whereRaw` injects the expression verbatim and binds
+values separately.
+
+```php
+// SQL functions and interval arithmetic
+$recent = Post::query()
+    ->whereRaw("created_at >= NOW() - INTERVAL '24 hours'")
+    ->get();
+
+// Placeholders are bound, never interpolated
+$posts = Post::query()
+    ->whereRaw('view_count BETWEEN ? AND ?', [100, 500])
+    ->get();
+
+// Compare two columns: where() would bind the second one as a string literal
+$overdue = Order::query()
+    ->whereColumn('NOW()', '>', 'due_at')
+    ->get();
+```
+
+The expression is injected as written, so never build it from user input — pass values
+through the bindings argument instead.
+
+### Grouped Predicates
+
+`where()` and `orWhere()` append to a flat list, so `a AND b OR c` is read by SQL as
+`(a AND b) OR c`. To express `a AND (b OR c)`, pass a callback: its clauses are wrapped
+in parentheses.
+
+```php
+// WHERE status = 'published' AND (author_id = 1 OR author_id = 2)
+$posts = Post::query()
+    ->where('status', 'published')
+    ->where(function($query) {
+        $query->where('author_id', 1)
+              ->orWhere('author_id', 2);
+    })
+    ->get();
+
+// Groups nest, and orWhere() takes a callback too
+$posts = Post::query()
+    ->whereNotNull('slug')
+    ->orWhere(function($query) {
+        $query->where('status', 'draft')
+              ->whereNull('published_at');
+    })
+    ->get();
+```
+
+### HAVING
+
+Filter on aggregates after grouping:
+
+```php
+$popular = Post::query()
+    ->select(['author_id', 'COUNT(*) AS post_count'])
+    ->groupBy('author_id')
+    ->having('COUNT(*)', '>', 5)
+    ->getRaw();
+
+$busy = Post::query()
+    ->select(['author_id', 'SUM(view_count) AS views'])
+    ->groupBy('author_id')
+    ->havingRaw('SUM(view_count) > ?', [10000])
+    ->getRaw();
+```
+
+### Streaming Large Result Sets
+
+`get()` and `getRaw()` build an array of every row, which is fine for bounded queries and
+expensive for large ones. `cursor()` and `cursorRaw()` return generators that yield one row
+at a time instead:
+
+```php
+// One model at a time
+foreach (Post::query()->where('status', 'published')->cursor() as $post) {
+    echo $post->getTitle();
+}
+
+// One raw row at a time, for joined projections and aggregates
+foreach (Post::query()->select(['posts.*', 'users.username'])
+             ->join('users', 'posts.author_id', '=', 'users.id')
+             ->cursorRaw() as $row) {
+    echo $row['username'];
+}
+```
+
+Relations are not eager loaded while streaming: `with()` needs the whole set up front to
+batch its queries, so touching a relation inside the loop would query once per row. Use
+`get()` when you need `with()`.
+
+Breaking out of the loop early closes the cursor.
 
 ### Column Selection
 

@@ -1,4 +1,19 @@
-## 0.1.15.1
+## 0.1.15
+
+* Added whereRaw and orWhereRaw for predicates with no fluent equivalent.
+* Added parenthesised clause groups via where( callback ) and orWhere( callback ),
+  so `a AND ( b OR c )` is now expressible.
+* Added cursor() and cursorRaw() to stream large result sets without building an array.
+* Added whereNotIn, orWhereIn, orWhereNotNull and whereColumn.
+* Added having() and havingRaw().
+* Fixed: offset() without limit() emitted `LIMIT -1`, which Postgres and MySQL reject.
+  The placeholder is now only emitted for SQLite, which needs it.
+* Fixed: where( $column, null ) bound NULL to `=` and so matched nothing; a null value
+  now compiles to IS NULL, and `!=` / `<>` to IS NOT NULL.
+* Fixed: bindings are bound with their PHP types rather than all as strings, so a
+  comparison against an expression with no column affinity (an aggregate in a HAVING
+  clause) no longer silently fails.
+* Fixed: count() and the aggregate methods ignored the table alias and JOINs.
 
 ## 0.1.14 2026-10-04
 
