@@ -87,6 +87,73 @@ class MigrationManagerTest extends TestCase
 		$this->assertSame( 'neuron', $env['name'] );
 	}
 
+	public function testDatabaseUrlInConfigIsResolved(): void
+	{
+		$env = $this->databaseConfig([
+			'database' => [
+				'url' => 'postgresql://pguser:pgpass@pg.internal:6543/pgdb',
+			],
+		]);
+
+		$this->assertSame( 'pgsql', $env['adapter'] );
+		$this->assertSame( 'pg.internal', $env['host'] );
+		$this->assertSame( 6543, $env['port'] );
+		$this->assertSame( 'pgdb', $env['name'] );
+		$this->assertSame( 'pguser', $env['user'] );
+		$this->assertSame( 'pgpass', $env['pass'] );
+	}
+
+	public function testPostgresPortDefaultsTo5432(): void
+	{
+		$env = $this->databaseConfig([ 'database' => [ 'url' => 'postgresql://u:p@host/db' ] ]);
+
+		$this->assertSame( 5432, $env['port'] );
+	}
+
+	public function testSqliteUrlDropsSuffixForPhinx(): void
+	{
+		$env = $this->databaseConfig([ 'database' => [ 'url' => 'sqlite:///var/app/storage/database.sqlite3' ] ]);
+
+		$this->assertSame( 'sqlite', $env['adapter'] );
+		$this->assertSame( '/var/app/storage/database', $env['name'] );
+	}
+
+	public function testDatabaseUrlEnvironmentOverridesConfig(): void
+	{
+		$previous = getenv( 'DATABASE_URL' );
+		putenv( 'DATABASE_URL=mysql://envuser:envpass@env.internal:3307/envdb' );
+
+		try
+		{
+			$env = $this->databaseConfig([
+				'database' => [ 'adapter' => 'sqlite', 'name' => 'storage/local.sqlite3' ],
+			]);
+
+			$this->assertSame( 'mysql', $env['adapter'] );
+			$this->assertSame( 'env.internal', $env['host'] );
+			$this->assertSame( 3307, $env['port'] );
+			$this->assertSame( 'envdb', $env['name'] );
+			$this->assertSame( 'envuser', $env['user'] );
+			$this->assertSame( 'envpass', $env['pass'] );
+
+			// Even with no database section at all.
+			$manager = new MigrationManager( '/tmp', new Memory( [] ) );
+			$bare = $manager->getPhinxConfig()['environments'][ $manager->getEnvironment() ];
+			$this->assertSame( 'envdb', $bare['name'] );
+		}
+		finally
+		{
+			if( $previous === false )
+			{
+				putenv( 'DATABASE_URL' );
+			}
+			else
+			{
+				putenv( 'DATABASE_URL=' . $previous );
+			}
+		}
+	}
+
 	public function testCreateWritesMigrationFile(): void
 	{
 		$base = sys_get_temp_dir() . '/neuron_orm_create_' . uniqid();
