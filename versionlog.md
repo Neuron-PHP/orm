@@ -1,3 +1,5 @@
+## 0.1.17
+
 ## 0.1.16 2026-10-20
 
 * `MigrationManager` resolves the `database:` section through
