@@ -1,4 +1,4 @@
-## 0.1.16
+## 0.1.16 2026-10-20
 
 * `MigrationManager` resolves the `database:` section through
   `Neuron\Data\Database\ConnectionFactory`, so `db:migrate` and friends now
