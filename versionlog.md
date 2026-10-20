@@ -1,5 +1,12 @@
 ## 0.1.16
 
+* `MigrationManager` resolves the `database:` section through
+  `Neuron\Data\Database\ConnectionFactory`, so `db:migrate` and friends now
+  honour `database.url` and a `DATABASE_URL` environment variable like the
+  rest of the framework. Previously a `url:`-only configuration silently fell
+  back to `mysql://root@localhost/neuron`.
+* Fixed: PostgreSQL migrations defaulted to port 3306; now 5432.
+
 ## 0.1.15 2026-10-08
 
 * Added whereRaw and orWhereRaw for predicates with no fluent equivalent.

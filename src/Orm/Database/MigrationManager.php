@@ -2,6 +2,7 @@
 
 namespace Neuron\Orm\Database;
 
+use Neuron\Data\Database\ConnectionFactory;
 use Neuron\Data\Settings\Source\ISettingSource;
 use Neuron\Data\Settings\EnvironmentDetector;
 use Neuron\Log\Log;
@@ -83,47 +84,70 @@ class MigrationManager
 	/**
 	 * Get database configuration for Phinx
 	 *
+	 * Resolves the `database:` section the same way the rest of the framework
+	 * does (Neuron\Data\Database\ConnectionFactory): individual keys, a `url`,
+	 * the `username`/`password` aliases used by encrypted secrets, and a
+	 * `DATABASE_URL` environment variable over all of them. Phinx then gets a
+	 * flat adapter/host/name/user/pass/port/charset array.
+	 *
 	 * @return array
 	 */
 	private function getDatabaseConfig(): array
 	{
-		if( !$this->_SettingSource )
+		$section = [];
+
+		if( $this->_SettingSource )
+		{
+			try
+			{
+				$section = $this->_SettingSource->getSection( 'database' ) ?? [];
+			}
+			catch( \Exception $e )
+			{
+				$section = [];
+			}
+		}
+
+		if( !$section && ConnectionFactory::environmentUrl() === null )
 		{
 			return $this->getDefaultDatabaseConfig();
+		}
+
+		// Historic defaults for sections made of individual keys. Not added
+		// when a URL is in play: explicit keys outrank a file url inside
+		// normalize(), so defaults there would override the URL.
+		if( empty( $section['url'] ) && ConnectionFactory::environmentUrl() === null )
+		{
+			$section += [ 'adapter' => 'mysql', 'name' => 'neuron' ];
 		}
 
 		try
 		{
-			$adapter = $this->getSetting( 'database', 'adapter', 'mysql' );
-			$name = $this->getSetting( 'database', 'name', 'neuron' );
-
-			// For SQLite, remove .sqlite3 suffix as Phinx will append it
-			if( $adapter === 'sqlite' && str_ends_with( $name, '.sqlite3' ) )
-			{
-				$name = substr( $name, 0, -8 ); // Remove .sqlite3
-			}
-
-			$host = $this->getSetting( 'database', 'host', 'localhost' );
-			// Accept both user/pass and username/password (encrypted secrets use the latter)
-			$user = $this->getSetting( 'database', 'user', $this->getSetting( 'database', 'username', 'root' ) );
-			$pass = $this->getSetting( 'database', 'pass', $this->getSetting( 'database', 'password', '' ) );
-			$port = $this->getSetting( 'database', 'port', 3306 );
-			$charset = $this->getSetting( 'database', 'charset', 'utf8mb4' );
-
-			return [
-				'adapter' => $adapter,
-				'host' => $host,
-				'name' => $name,
-				'user' => $user,
-				'pass' => $pass,
-				'port' => (int)$port,
-				'charset' => $charset
-			];
+			$config = ConnectionFactory::normalize( $section );
 		}
-		catch( \Exception $e )
+		catch( \InvalidArgumentException $e )
 		{
+			Log::warning( "Migration database config could not be resolved, using defaults: " . $e->getMessage() );
 			return $this->getDefaultDatabaseConfig();
 		}
+
+		$name = (string)$config['name'];
+
+		// For SQLite, remove .sqlite3 suffix as Phinx will append it
+		if( $config['adapter'] === 'sqlite' && str_ends_with( $name, '.sqlite3' ) )
+		{
+			$name = substr( $name, 0, -8 );
+		}
+
+		return [
+			'adapter' => $config['adapter'],
+			'host' => $config['host'] ?? 'localhost',
+			'name' => $name,
+			'user' => $config['user'] ?? 'root',
+			'pass' => $config['pass'] ?? '',
+			'port' => (int)( $config['port'] ?? ( $config['adapter'] === 'pgsql' ? 5432 : 3306 ) ),
+			'charset' => $config['charset'] ?? 'utf8mb4'
+		];
 	}
 
 	/**
