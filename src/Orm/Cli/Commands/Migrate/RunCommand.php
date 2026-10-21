@@ -151,9 +151,8 @@ class RunCommand extends Command
 	 */
 	private function loadSettings( string $configPath ): ?ISettingSource
 	{
-		$configFile = $configPath . '/neuron.yaml';
-
-		if( !file_exists( $configFile ) )
+		// Every file layer is optional; the environment is always the fallback.
+		if( !is_dir( $configPath ) )
 		{
 			return null;
 		}

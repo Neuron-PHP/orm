@@ -1,3 +1,11 @@
+## 0.1.17 2026-10-20
+
+* The `db:migrate`, `db:status`, `db:rollback`, `db:seed` and
+  `migrate:create` commands no longer require `config/neuron.yaml` to exist
+  before reading settings. They load through `SettingManagerFactory`, so a
+  deployment configured purely through environment variables (`DATABASE_URL`,
+  `DATABASE_*`) resolves its connection the same way the application does.
+
 ## 0.1.16 2026-10-20
 
 * `MigrationManager` resolves the `database:` section through
