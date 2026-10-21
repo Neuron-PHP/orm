@@ -4,7 +4,8 @@ namespace Neuron\Orm\Cli\Commands\Migrate;
 
 use Neuron\Cli\Commands\Command;
 use Neuron\Orm\Database\MigrationManager;
-use Neuron\Data\Settings\Source\Yaml;
+use Neuron\Data\Settings\Source\ISettingSource;
+use Neuron\Data\Settings\SettingManagerFactory;
 
 /**
  * CLI command for creating a new database migration
@@ -133,20 +134,19 @@ class CreateCommand extends Command
 	 * Load settings from config directory
 	 *
 	 * @param string $configPath
-	 * @return Yaml|null
+	 * @return ISettingSource|null
 	 */
-	private function loadSettings( string $configPath ): ?Yaml
+	private function loadSettings( string $configPath ): ?ISettingSource
 	{
-		$configFile = $configPath . '/neuron.yaml';
-
-		if( !file_exists( $configFile ) )
+		// Every file layer is optional; the environment is always the fallback.
+		if( !is_dir( $configPath ) )
 		{
 			return null;
 		}
 
 		try
 		{
-			return new Yaml( $configFile );
+			return SettingManagerFactory::create( null, $configPath );
 		}
 		catch( \Exception $e )
 		{
