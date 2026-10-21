@@ -1,4 +1,4 @@
-## 0.1.17
+## 0.1.17 2026-10-20
 
 * The `db:migrate`, `db:status`, `db:rollback`, `db:seed` and
   `migrate:create` commands no longer require `config/neuron.yaml` to exist
