@@ -8,6 +8,7 @@ node_modules
 public_html/
 build/
 .phpunit.result.cache
+.phpunit.cache
 /examples/test.log
 /examples/bad/test.log
 /cache/

@@ -21,7 +21,7 @@ jobs:
       run: composer install --prefer-dist --no-progress --no-interaction --optimize-autoloader
 
     - name: Run PHPUnit with Coverage
-      run: vendor/bin/phpunit tests --coverage-clover coverage.xml --coverage-filter src
+      run: vendor/bin/phpunit tests --coverage-clover coverage.xml
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v5
